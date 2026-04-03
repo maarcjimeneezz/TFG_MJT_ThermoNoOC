@@ -1,0 +1,28 @@
+# --- PlatformIO Specific ---
+.pio/
+.pioenvs/
+.piolibdeps/
+.clang_complete
+.gcc-flags.json
+
+# --- VS Code Specific ---
+# We ignore the whole folder because it contains local machine paths
+.vscode/
+# Except for the extensions file which is useful for the TFG
+!.vscode/extensions.json
+
+# --- Build Artifacts ---
+build/
+bin/
+*.bak
+*.map
+*.hex
+*.bin
+
+# --- Unit Testing ---
+.test/
+
+# --- System Files ---
+.DS_Store
+Thumbs.db
+desktop.ini
