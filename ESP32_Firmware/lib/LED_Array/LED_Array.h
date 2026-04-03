@@ -8,14 +8,14 @@ class LED_Array
 {
 private:
     // PWM Configuration
-    const int freq = 5000;    // 5 kHz to avoid flickering
-    const int resolution = 8; // 8-bit (0-255) for easy LabVIEW mapping
+    const int ledFreq = 5000; // 5 kHz to avoid flickering
+    const int ledRes = 8;     // 8-bit (0-255) for easy LabVIEW mapping
 
     // PWM Channels (ESP32 has 16 independent channels 0-15)
-    const int ch1 = 0;
-    const int ch2 = 1;
-    const int ch3 = 2;
-    const int ch4 = 3;
+    const int ledch1 = 0;
+    const int ledch2 = 1;
+    const int ledch3 = 2;
+    const int ledch4 = 3;
 
 public:
     LED_Array();
