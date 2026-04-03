@@ -1,0 +1,23 @@
+# PlatformIO: temporary and build files
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# VS Code: local configuration files
+.vscode/
+!.vscode/extensions.json
+
+# Build artifacts and temporary files
+build/
+bin/
+*.bak
+*.map
+*.hex
+*.bin
+
+# Unit Testing
+.test/
+
+# System files
+.DS_Store
+Thumbs.db
