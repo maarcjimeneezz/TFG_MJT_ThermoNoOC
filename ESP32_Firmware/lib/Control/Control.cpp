@@ -5,14 +5,14 @@ Control::Control() {}
 
 void Control::begin()
 {
-    // Initialize ESP32 LEDC PWM peripheral for fans
+    // --- Initialize ESP32 LEDC PWM peripheral for fans ---
     ledcSetup(fanCh, fanFreq, fanRes);
     ledcAttachPin(PIN_PWM_FANS, fanCh);
 
-    // Ensure fans are off at startup
+    // --- Ensure fans are off at startup ---
     setFansSpeed(0);
 
-    // Set ADC resolution to 12-bit (0-4095) for better precision
+    // --- Set ADC resolution to 12-bit (0-4095) for better precision ---
     analogReadResolution(12);
 }
 
@@ -23,11 +23,13 @@ float Control::getPCBTemperature()
 
     // Boundary check to prevent division by zero or log errors
     if (adcVal <= 0 || adcVal >= 4095)
+    {
         return -273.15;
+    }
 
     /* * 1. Calculate NTC Resistance
      * Voltage Divider Circuit: 3.3V -> R_FIXED (4.7k) -> PIN -> NTC -> GND
-     * formula: R_ntc = R_fixed * (V_out / (V_source - V_out))
+     * Formula: R_ntc = R_fixed * (V_out / (V_source - V_out))
      */
     float vOut = (adcVal * 3.3) / 4095.0;
     float rNtc = R_FIXED * (vOut / (3.3 - vOut));
