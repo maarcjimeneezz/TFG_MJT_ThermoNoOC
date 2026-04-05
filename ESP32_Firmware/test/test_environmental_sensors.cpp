@@ -1,6 +1,6 @@
 /**
  * @file test_environmental_sensors.cpp
- * @brief Validates SHT35 (Temp/Hum), LTR390 (UV), and MH-Z19 (CO2) sensors.
+ * @brief Validates SHT35 (Temp/Hum), LTR390 (UV), and T6615 (CO2) sensors.
  */
 
 #include <Arduino.h>
@@ -17,7 +17,7 @@ void setup()
     incubator.begin();
 
     Serial.println("=== ENVIRONMENTAL SENSORS TEST STARTED ===");
-    Serial.println("Reading: SHT35 (x2), LTR390 (UV), and MH-Z19 (CO2)");
+    Serial.println("Reading: SHT35 (x2), LTR390 (UV), and T6615 (CO2)");
 }
 
 void loop()
