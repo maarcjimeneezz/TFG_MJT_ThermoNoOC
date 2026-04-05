@@ -35,7 +35,7 @@ public:
     float temp1, hum1; // Data from SHT35 #1
     float temp2, hum2; // Data from SHT35 #2
     float uvIndex;     // Data from LTR390
-    uint32_t co2PPM;   // Data from MH-Z19 (CO2)
+    uint32_t co2PPM;   // Data from T6615 (CO2)
 
     Incubator();
 
