@@ -12,7 +12,7 @@
 
 Microfluidics fluidics;
 
-void setup()
+void setup_pumps_logic()
 {
     Serial.begin(115200);
 
@@ -42,7 +42,7 @@ void setup()
     Serial.println("All pumps are running. Monitoring flow sensors...");
 }
 
-void loop()
+void loop_pumps_logic()
 {
     // Read both flow sensors while pumps are active
     float f1 = fluidics.getFlowRate(1);

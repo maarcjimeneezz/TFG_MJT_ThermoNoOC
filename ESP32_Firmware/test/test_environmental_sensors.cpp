@@ -9,7 +9,7 @@
 
 Incubator incubator;
 
-void setup()
+void setup_environmental_sensors()
 {
     Serial.begin(115200);
 
@@ -20,7 +20,7 @@ void setup()
     Serial.println("Reading: SHT35 (x2), LTR390 (UV), and T6615 (CO2)");
 }
 
-void loop()
+void loop_environmental_sensors()
 {
     // Update all readings
     incubator.readEnvironment();

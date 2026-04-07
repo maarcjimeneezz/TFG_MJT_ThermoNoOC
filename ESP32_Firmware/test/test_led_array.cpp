@@ -8,14 +8,14 @@
 
 LED_Array leds;
 
-void setup()
+void setup_led_array()
 {
     Serial.begin(115200);
     leds.begin();
     Serial.println("=== LED ARRAY TEST: INDIVIDUAL CHANNELS ===");
 }
 
-void loop()
+void loop_led_array()
 {
     for (int group = 1; group <= 4; group++)
     {
