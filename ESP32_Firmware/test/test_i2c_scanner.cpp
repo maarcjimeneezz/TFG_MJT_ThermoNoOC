@@ -49,7 +49,7 @@ void scanMultiplexer(uint8_t muxAddr, const char *muxName)
     }
 }
 
-void setup()
+void setup_i2c_scanner()
 {
     Serial.begin(115200);
     Wire.begin(I2C_SDA, I2C_SCL);
@@ -57,7 +57,7 @@ void setup()
     Serial.println("=== I2C HARDWARE VERIFICATION STARTED ===");
 }
 
-void loop()
+void loop_i2c_scanner()
 {
     // Perform scan every 5 seconds
     scanMultiplexer(MUX_ADDR_SENSORS, "SENSORS");

@@ -9,14 +9,14 @@
 
 Control control;
 
-void setup()
+void setup_control_ntc_fans()
 {
     Serial.begin(115200);
     control.begin();
     Serial.println("=== CONTROL BOARD TEST: NTC & FANS ===");
 }
 
-void loop()
+void loop_control_ntc_fans()
 {
     // --- 1. Temperature Reading ---
     float pcbTemp = control.getPCBTemperature();
