@@ -14,33 +14,38 @@ void Control::begin()
 
     // --- Set ADC resolution to 12-bit (0-4095) for better precision ---
     analogReadResolution(12);
+    analogSetAttenuation(ADC_11db); // Set attenuation for full 3.3V range on ADC
 }
 
 float Control::getPCBTemperature()
 {
-    // Read the raw analog value from the NTC divider pin
-    int adcVal = analogRead(PIN_TEMP_PCB);
+    analogReadResolution(12);                        // Ensure ADC is set to 12-bit resolution
+    analogSetPinAttenuation(PIN_TEMP_PCB, ADC_11db); // Set attenuation for the NTC pin to read up to 3.3V
 
-    // Boundary check to prevent division by zero or log errors
-    if (adcVal <= 0 || adcVal >= 4095)
+    // Average multiple readings to reduce noise
+    long sum = 0;
+    for (int i = 0; i < 15; i++)
     {
-        return -273.15;
+        sum += analogRead(PIN_TEMP_PCB);
+        delay(1); // Short delay between readings
     }
+    int adcAvg = sum / 15; // Use the average of the 15 readings
 
-    /* * 1. Calculate NTC Resistance
-     * Voltage Divider Circuit: 3.3V -> R_FIXED (4.7k) -> PIN -> NTC -> GND
-     * Formula: R_ntc = R_fixed * (V_out / (V_source - V_out))
-     */
-    float vOut = (adcVal * 3.3) / 4095.0;
-    float rNtc = R_FIXED * (vOut / (3.3 - vOut));
+    // Voltage Calculation
+    float vFixed = (adcAvg * 3.3) / 4095.0; // Convert ADC value to voltage (assuming 3.3V reference)
 
-    /* * 2. Apply the Beta Equation: 1/T = 1/T0 + 1/B * ln(R/R0)
-     * This provides the temperature in Kelvin.
-     */
+    // Resistance Calculation
+    float rNtc = R_FIXED * ((3.3 - vFixed) / vFixed); // Calculate NTC resistance using voltage divider formula
+
+    // Beta Equation to calculate temperature in Kelvin
     float tempK = 1.0 / ((1.0 / T0) + (1.0 / BETA) * log(rNtc / R0));
 
     // Convert Kelvin to Celsius
-    return tempK - 273.15;
+    float tempC = tempK - 273.15;
+
+    Serial.printf("NTC ADC: %d, Voltage: %.2f V, R_ntc: %.2f Ohms, Temp: %.2f °C\n", adcAvg, vFixed, rNtc, tempC);
+
+    return tempC;
 }
 
 void Control::setFansSpeed(uint8_t speed)

@@ -66,7 +66,7 @@ void Incubator::readEnvironment()
     selectBus(MUX_CH_UV);
     if (ltr.newDataAvailable())
     {
-        uvIndex = ltr.readUVI();
+        uvIndex = ltr.readUVS();
     }
 
     // 4. Read CO2 Sensor via Serial2

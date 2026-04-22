@@ -7,33 +7,33 @@
 #include "Control.h"
 #include "Pinout.h"
 
-Control control;
+Control control_fans;
 
 void setup_control_ntc_fans()
 {
     Serial.begin(115200);
-    control.begin();
+    control_fans.begin();
     Serial.println("=== CONTROL BOARD TEST: NTC & FANS ===");
 }
 
 void loop_control_ntc_fans()
 {
     // --- 1. Temperature Reading ---
-    float pcbTemp = control.getPCBTemperature();
+    float pcbTemp = control_fans.getPCBTemperature();
     Serial.printf("Current PCB Temp: %.2f Celsius\n", pcbTemp);
 
     // --- 2. Fan Speed Test: LOW (approx 30% duty) ---
     Serial.println("Testing Fans: LOW SPEED (80/255)");
-    control.setFansSpeed(80);
+    control_fans.setFansSpeed(80);
     delay(4000);
 
     // --- 3. Fan Speed Test: HIGH (100% duty) ---
     Serial.println("Testing Fans: FULL SPEED (255/255)");
-    control.setFansSpeed(255);
+    control_fans.setFansSpeed(255);
     delay(4000);
 
     // --- 4. Turn OFF ---
     Serial.println("Testing Fans: OFF\n");
-    control.setFansSpeed(0);
+    control_fans.setFansSpeed(0);
     delay(2000);
 }
