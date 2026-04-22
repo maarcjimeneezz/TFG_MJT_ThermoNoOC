@@ -12,6 +12,7 @@
 
 // --- Test Selection Flags ---
 // Set to 1 to enable the specific test, 0 to skip it during compilation
+#define ENABLE_FIRST_PCB_TEST 1
 #define ENABLE_CONTROL_NTC_FANS_TEST 0
 #define ENABLE_ENVIRONMENTAL_SENSORS_TEST 0
 #define ENABLE_I2C_SCANNER_TEST 0
@@ -26,6 +27,9 @@ void setup(void)
 {
     // Initialize Serial communication for all tests
     Serial.begin(115200);
+#if (ENABLE_FIRST_PCB_TEST == 1)
+    setup_first_pcb();
+#endif
 
 #if (ENABLE_CONTROL_NTC_FANS_TEST == 1)
     setup_control_ntc_fans();
@@ -54,6 +58,10 @@ void setup(void)
  */
 void loop(void)
 {
+#if (ENABLE_FIRST_PCB_TEST == 1)
+    loop_first_pcb();
+#endif
+
 #if (ENABLE_CONTROL_NTC_FANS_TEST == 1)
     loop_control_ntc_fans();
 #endif
