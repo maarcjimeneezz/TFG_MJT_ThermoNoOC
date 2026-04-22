@@ -10,6 +10,26 @@
 
 #include <Arduino.h>
 
+// Forward declarations of test setup and loop functions
+// First PCB Test
+void setup_first_pcb();
+void loop_first_pcb();
+// Control NTC Fans Test
+void setup_control_ntc_fans();
+void loop_control_ntc_fans();
+// Environmental Sensors Test
+void setup_environmental_sensors();
+void loop_environmental_sensors();
+// I2C Scanner Test
+void setup_i2c_scanner();
+void loop_i2c_scanner();
+// LED Array Test
+void setup_led_array();
+void loop_led_array();
+// Pumps Logic Test
+void setup_pumps_logic();
+void loop_pumps_logic();
+
 // --- Test Selection Flags ---
 // Set to 1 to enable the specific test, 0 to skip it during compilation
 #define ENABLE_FIRST_PCB_TEST 1
