@@ -27,14 +27,14 @@ void loop_environmental_sensors()
 
     Serial.println("--- Environment Report ---");
 
-    // 1. SHT35 Sensors
+    // SHT35 Sensors
     Serial.printf("Sensor 1 (Chamber): %.2f C | %.2f %%RH\n", incubator.temp1, incubator.hum1);
     Serial.printf("Sensor 2 (Ambient): %.2f C | %.2f %%RH\n", incubator.temp2, incubator.hum2);
 
-    // 2. UV Sensor
+    // UV Sensor
     Serial.printf("UV Index: %.2f\n", incubator.uvIndex);
 
-    // 3. CO2 Sensor
+    // CO2 Sensor
     Serial.printf("CO2 Concentration: %u PPM\n", incubator.co2PPM);
 
     Serial.println("--------------------------");
