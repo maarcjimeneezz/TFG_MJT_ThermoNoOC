@@ -30,7 +30,7 @@ void loop_led_array();
 void setup_pumps_logic();
 void loop_pumps_logic();
 
-// --- Test Selection Flags ---
+// Test Selection Flags
 // Set to 1 to enable the specific test, 0 to skip it during compilation
 #define ENABLE_FIRST_PCB_TEST 0
 #define ENABLE_CONTROL_NTC_FANS_TEST 0
