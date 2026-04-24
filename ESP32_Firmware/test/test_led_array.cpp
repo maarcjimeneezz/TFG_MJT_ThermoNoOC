@@ -21,7 +21,7 @@ void loop_led_array()
     {
         Serial.printf("Testing LED Group %d: Fading Up...\n", group);
 
-        // --- Fade Up ---
+        // Fade Up from 0 to 255 in steps of 5 for smooth transition
         for (int brightness = 0; brightness <= 255; brightness += 5)
         {
             leds.setBrightness(group, brightness);
@@ -31,7 +31,8 @@ void loop_led_array()
         delay(1000); // Hold at max brightness
 
         Serial.printf("Testing LED Group %d: Fading Down...\n", group);
-        // --- Fade Down ---
+
+        // Fade Down from 255 to 0 in steps of 5 for smooth transition
         for (int brightness = 255; brightness >= 0; brightness -= 5)
         {
             leds.setBrightness(group, brightness);
