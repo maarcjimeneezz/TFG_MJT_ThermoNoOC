@@ -18,7 +18,7 @@ void scanMultiplexer(uint8_t muxAddr, const char *muxName)
 
     for (uint8_t channel = 0; channel < 8; channel++)
     {
-        // --- Select the multiplexer channel ---
+        // Select the multiplexer channel
         Wire.beginTransmission(muxAddr);
         Wire.write(1 << channel);
         if (Wire.endTransmission() != 0)
@@ -27,7 +27,7 @@ void scanMultiplexer(uint8_t muxAddr, const char *muxName)
             continue;
         }
 
-        // --- Scan all possible I2C addresses on this channel ---
+        // Scan all possible I2C addresses on this channel
         Serial.printf("Channel %d: [ ", channel);
         bool found = false;
         for (uint8_t addr = 1; addr < 127; addr++)
@@ -54,7 +54,7 @@ void setup_i2c_scanner()
     Serial.begin(115200);
     Wire.begin(I2C_SDA, I2C_SCL);
     delay(2000);
-    Serial.println("=== I2C HARDWARE VERIFICATION STARTED ===");
+    Serial.println("I2C HARDWARE VERIFICATION STARTED");
 }
 
 void loop_i2c_scanner()

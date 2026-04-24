@@ -22,7 +22,7 @@ void setup_pumps_logic()
     Serial.println("=== PARALLEL PUMP STRESS TEST ===");
     Serial.println("Action: Starting all 4 pumps... NOW.");
 
-    // --- START ALL PUMPS SIMULTANEOUSLY ---
+    // START ALL PUMPS SIMULTANEOUSLY
     // Note: The Mux switches channels fast enough that they seem to start at once.
 
     // Liquid path
