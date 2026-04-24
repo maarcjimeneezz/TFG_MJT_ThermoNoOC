@@ -8,25 +8,22 @@
 #include "Pinout.h"
 
 // Define the onboard LED pin.
-// Most ESP32 DevKits use GPIO 2. Change if your PCB uses a different pin.
 #define ONBOARD_LED 2
 
 Control control_pcb;
 
 void setup_first_pcb()
 {
-    // 1. Start Serial for debugging
+    // Start Serial for debugging
     Serial.begin(115200);
     delay(1000);
 
-    Serial.println("=====================================");
-    Serial.println("   PCB TEST 01: HEARTBEAT & THERMAL  ");
-    Serial.println("=====================================");
+    Serial.println("PCB TEST 01: HEARTBEAT & THERMAL  ");
 
-    // 2. Initialize the Control library (Setup ADC for NTC)
+    // Initialize the Control library (Setup ADC for NTC)
     control_pcb.begin();
 
-    // 3. Configure the LED pin
+    // Configure the LED pin
     pinMode(ONBOARD_LED, OUTPUT);
 
     Serial.println("Setup Complete. Starting loop...");
@@ -34,12 +31,12 @@ void setup_first_pcb()
 
 void loop_first_pcb()
 {
-    // --- Heartbeat (Blink) ---
+    // Heartbeat (Blink)
     digitalWrite(ONBOARD_LED, HIGH);
     delay(500);
     digitalWrite(ONBOARD_LED, LOW);
 
-    // --- Thermal Reading ---
+    // Thermal Reading
     // This uses your Control library logic which likely uses the Steinhart-Hart equation
     float currentTemp = control_pcb.getPCBTemperature();
 
