@@ -18,22 +18,32 @@ void setup_control_ntc_fans()
 
 void loop_control_ntc_fans()
 {
-    // --- 1. Temperature Reading ---
+    // Temperature Reading
     float pcbTemp = control_fans.getPCBTemperature();
     Serial.printf("Current PCB Temp: %.2f Celsius\n", pcbTemp);
 
-    // --- 2. Fan Speed Test: LOW (approx 30% duty) ---
-    Serial.println("Testing Fans: LOW SPEED (80/255)");
-    control_fans.setFansSpeed(80);
-    delay(4000);
+    // Fan Speed Test: LOW (approx 25% duty)
+    Serial.println("Testing Fans: LOW SPEED (64/255)");
+    control_fans.setFansSpeed(64);
+    delay(2500);
 
-    // --- 3. Fan Speed Test: HIGH (100% duty) ---
+    // Fan Speed Test: LOW-MEDIUM (approx 50% duty)
+    Serial.println("Testing Fans: LOW-MEDIUM SPEED (128/255)");
+    control_fans.setFansSpeed(128);
+    delay(2500);
+
+    // Fan Speed Test: MEDIUM-HIGH (approx 75% duty)
+    Serial.println("Testing Fans: MEDIUM-HIGH SPEED (192/255)");
+    control_fans.setFansSpeed(192);
+    delay(2500);
+
+    // Fan Speed Test: HIGH (100% duty)
     Serial.println("Testing Fans: FULL SPEED (255/255)");
     control_fans.setFansSpeed(255);
-    delay(4000);
+    delay(2500);
 
-    // --- 4. Turn OFF ---
+    // Turn OFF
     Serial.println("Testing Fans: OFF\n");
     control_fans.setFansSpeed(0);
-    delay(2000);
+    delay(2500);
 }
