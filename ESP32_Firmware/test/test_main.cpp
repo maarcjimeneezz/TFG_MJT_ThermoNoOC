@@ -29,6 +29,9 @@ void loop_led_array();
 // Pumps Logic Test
 void setup_pumps_logic();
 void loop_pumps_logic();
+// ITO Glass Test
+void setup_ito_glass();
+void loop_ito_glass();
 
 // Test Selection Flags
 // Set to 1 to enable the specific test, 0 to skip it during compilation
@@ -38,6 +41,7 @@ void loop_pumps_logic();
 #define ENABLE_I2C_SCANNER_TEST 0
 #define ENABLE_LED_ARRAY_TEST 1
 #define ENABLE_PUMPS_LOGIC_TEST 0
+#define ENABLE_ITO_GLASS_TEST 0
 
 /**
  * @brief Main Setup function.
@@ -70,6 +74,10 @@ void setup(void)
 #if (ENABLE_PUMPS_LOGIC_TEST == 1)
     setup_pumps_logic();
 #endif
+
+#if (ENABLE_ITO_GLASS_TEST == 1)
+    setup_ito_glass();
+#endif
 }
 
 /**
@@ -100,5 +108,9 @@ void loop(void)
 
 #if (ENABLE_PUMPS_LOGIC_TEST == 1)
     loop_pumps_logic();
+#endif
+
+#if (ENABLE_ITO_GLASS_TEST == 1)
+    loop_ito_glass();
 #endif
 }
