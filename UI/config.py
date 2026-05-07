@@ -16,6 +16,7 @@ TEMPERATURE_CONFIG = {
     "max": 50,                   # Maximum temperature (°C)
     "default": 20,               # Default target temperature (°C)
     "steps": 150,                # Number of slider steps
+    "plot_range_degrees": 8,     # Temperature plot Y-axis range in degrees
 }
 
 # UV LED Configuration
@@ -31,8 +32,34 @@ UV_CONFIG = {
 MICROFLUIDICS_CONFIG = {
     "num_pumps": 2,              # Number of micropumps
     "min_flow": 0,               # Minimum flow (µL/min)
-    "max_flow": 2000,             # Maximum flow (µL/min)
+    "max_flow": 2000,            # Maximum flow (µL/min)
     "default_flow": 0,           # Default flow (µL/min)
+    "default_mode": "continuous", # Default pump mode: "continuous" or "intermittent"
+    "timing_defaults": {
+        "feeding_time": 10,      # Default feeding time (seconds) for intermittent
+        "pause_time": 5,         # Default pause time (seconds) for intermittent
+        "cycles": 10             # Default number of cycles for intermittent
+    }
+}
+
+# Sensor Configuration
+SENSOR_CONFIG = {
+    "temp1": {"label": "Glass Sensor", "unit": "°C", "decimal_places": 1},
+    "humidity1": {"label": "Glass Sensor", "unit": "%", "decimal_places": 1},
+    "temp2": {"label": "Base Sensor", "unit": "°C", "decimal_places": 1},
+    "humidity2": {"label": "Base Sensor", "unit": "%", "decimal_places": 1},
+    "uv": {"label": "UV", "unit": "W/m²", "decimal_places": 1},
+    "co2": {"label": "CO₂", "unit": "%", "decimal_places": 1},  # Display as percentage
+    "flow1": {"label": "Pump 1", "unit": "µL/min", "decimal_places": 1},
+    "flow2": {"label": "Pump 2", "unit": "µL/min", "decimal_places": 1},
+}
+
+# Gating Configuration
+GATING_CONFIG = {
+    "incubator_closed_default": False,  # Default state for incubator gating
+    "microfluidics_closed_default": False,  # Default state for microfluidics gating
+    "incubator_gates": ["temp1", "humidity1", "temp2", "humidity2", "uv", "co2"],  # Sensors gated by incubator
+    "microfluidics_gates": ["flow1", "flow2"],  # Sensors gated by microfluidics
 }
 
 # Graph Configuration
@@ -69,16 +96,6 @@ COLOR_CONFIG = {
     "warning": "#ffaa00",       # Orange
 }
 
-# Sensor Display Configuration
-SENSOR_CONFIG = {
-    "temp1": {"label": "Temp 1", "unit": "°C", "decimal_places": 1},
-    "humidity1": {"label": "Humidity 1", "unit": "%", "decimal_places": 1},
-    "temp2": {"label": "Temp 2", "unit": "°C", "decimal_places": 1},
-    "humidity2": {"label": "Humidity 2", "unit": "%", "decimal_places": 1},
-    "uv": {"label": "UV", "unit": "W/m²", "decimal_places": 1},
-    "co2": {"label": "CO₂", "unit": "ppm", "decimal_places": 0},
-}
-
 # Data Simulation Settings (for testing without ESP32)
 SIMULATION_CONFIG = {
     "enabled": True,             # Enable data simulation
@@ -92,8 +109,8 @@ SIMULATION_CONFIG = {
     "humidity2_variance": 5,    # Variance
     "uv_center": 100,           # Center UV level
     "uv_variance": 20,          # Variance
-    "co2_center": 400,          # Center CO2 level
-    "co2_variance": 50,         # Variance
+    "co2_center": 0.04,         # Center CO2 level (as percentage)
+    "co2_variance": 0.005,      # Variance
     "flow1_center": 25,         # Center flow pump 1
     "flow1_variance": 2,        # Variance
     "flow2_center": 30,         # Center flow pump 2

@@ -1,44 +1,60 @@
 # ThermoNoOC UI - User Interface Documentation
 
 ## Overview
-Professional control interface for the ThermoNoOC incubator system with real-time monitoring and WiFi communication with ESP32.
+Professional control interface for the ThermoNoOC incubator system with real-time monitoring and WiFi communication with ESP32. Features a modern tabbed single-window design for efficient workspace management.
 
 ## Features
 
-### 1. **Incubator Monitoring** 🌡️
-- **Real-time Graphs**: Three interactive matplotlib graphs displaying:
-  - Combined Temperature from both Sensor 1 and Sensor 2
-  - Combined Humidity from both Sensor 1 and Sensor 2
-  - UV Radiation levels
-  - CO₂ concentration
-- **Live Value Display**: Current readings for all sensors updated every second
-- **Color-coded Indicators**: Solid lines for Sensor 1, dashed lines for Sensor 2
-- **Data Export**: Button to save all sensor data to CSV file with timestamp
+### 1. **Tabbed Interface** 📑
+- **Single Window Design**: All controls and monitoring in one organized window
+- **Navigation Tabs**: Easy switching between different system aspects:
+  - **Clock**: System time and status overview
+  - **Temperature**: Temperature and humidity monitoring and control
+  - **UV Control**: UV LED array management
+  - **Microfluidics**: Pump control and flow monitoring
 
-### 2. **Temperature Control** 🌡️
-- **Slider Control**: Smooth slider from 20°C to 50°C for setting target temperature
-- **Manual Entry**: Type exact temperature values for precise control
-- **Real-time Feedback**: Current target temperature displayed during adjustment
-- **ESP32 Integration**: Commands sent immediately upon change
+### 2. **System Gating** 🔒
+- **Incubator Closed Button**: Activates incubator sensors (temperature, humidity, UV, CO₂)
+- **Microfluidics Closed Button**: Activates microfluidics sensors (flow sensors)
+- **Independent Control**: Can operate incubator and microfluidics separately
+- **Sensor Protection**: No readings displayed when systems are not closed
 
-### 3. **UV LED Control** 💡
+### 3. **Temperature Control** 🌡️
+- **Real-time Monitoring**: Live temperature and humidity from Glass and Base sensors
+- **Dynamic Plot Scaling**: Y-axis automatically adjusts to ±4°C around current temperature
+- **Target Control**: Slider and manual entry for precise temperature setting (20-50°C)
+- **Dual Sensor Display**: Separate readings from glass and base sensors
+
+### 4. **Environmental Monitoring** 🌿
+- **CO₂ Levels**: Displayed as percentage instead of ppm
+- **UV Radiation**: Real-time UV intensity monitoring
+- **Humidity Tracking**: Separate humidity readings from both sensors
+- **Real-time Graphs**: Interactive matplotlib plots with color-coded data
+
+### 5. **UV LED Control** 💡
 - **4 Independent Groups**: Control up to 4 UV LED arrays independently
 - **Toggle Switch**: Enable/Disable each group
 - **Intensity Slider**: 0-100% intensity control for each group
 - **Individual Status**: Real-time display of each group's intensity level
 
-### 4. **Microfluidics Control** 💧
-- **2 Micropumps**: Independent control of two peristaltic pumps
-- **Flow Input**: Set desired flow rate (0-100 µL/min) for each pump
+### 6. **Microfluidics Control** 💧
+- **2 Independent Micropumps**: Separate control for each pump (0-2000 µL/min)
+- **Per-Pump Modes**:
+  - **Continuous**: Steady flow operation
+  - **Intermittent**: Timed feeding cycles with configurable parameters
+- **Timing Controls** (Intermittent mode only):
+  - Feeding time (seconds)
+  - Pause time (seconds)
+  - Number of cycles
 - **Flow Monitoring**: Real-time display of actual flow sensor readings
 - **Real-time Plotting**: Graph showing flow rate trends over time
 
-### 5. **Data Export** 💾
+### 7. **Data Export** 💾
 - **CSV Export**: Save all sensor data to CSV file with automatic timestamp
 - **Complete Data**: Exports temperature, humidity, UV, CO₂, and flow rate data
 - **One-Click Save**: Simple button to save data anytime during operation
 
-### 6. **ESP32 Connectivity** 🌐
+### 8. **ESP32 Connectivity** 🌐
 - **WiFi Connection**: Direct TCP connection to ESP32 (default: 192.168.4.1:80)
 - **Connection Status**: Visual indicator (green = connected, red = disconnected)
 - **Command Protocol**: JSON-based command system for reliable communication
@@ -65,13 +81,12 @@ pip install -r requirements.txt
 python User_interface.py
 ```
 
-### Connecting to ESP32
-1. Click the "Connect ESP32" button
-2. Ensure ESP32 is powered and in WiFi AP mode
-3. Status indicator will turn green when connected
-4. Button will change to "Disconnect"
+### Initial Setup
+1. **System Gating**: Click "Incubator Closed" and/or "Microfluidics Closed" to activate sensors
+2. **ESP32 Connection**: Click "Connect ESP32" button when ready
+3. **Navigation**: Use tabs to switch between different control sections
 
-### Setting Temperature
+### Temperature Control
 **Option 1 - Slider:**
 - Drag the slider to desired temperature (20-50°C)
 - Value updates in real-time
@@ -80,26 +95,27 @@ python User_interface.py
 - Type temperature in the input field (must be 20-50°C)
 - Click "Set" button
 
-### Controlling UV LEDs
+### UV LED Management
 1. Select the UV group (1-4)
 2. Use the toggle switch to enable/disable
 3. Adjust the intensity slider (0-100%)
 4. Changes apply immediately
 
-### Managing Microfluidics
-1. Select the pump (1 or 2)
-2. Enter desired flow rate (0-100 µL/min)
-3. Click "Set Flow"
-4. Monitor actual flow in the graph and current flow display
+### Microfluidics Operation
+1. **Activate System**: Ensure "Microfluidics Closed" is pressed
+2. **Per-Pump Setup**:
+   - Choose Continuous or Intermittent mode
+   - For Continuous: Set flow rate (0-2000 µL/min)
+   - For Intermittent: Configure feeding time, pause time, and cycles
+3. **Apply Settings**: Click "Set Flow & Mode" for each pump
+4. **Monitor**: Watch real-time flow in graphs and current flow display
 
-### Exporting Data
-1. Click the "💾 Save Data to CSV" button in the Incubator Monitoring section
+### Data Export
+1. Click the "💾 Save Data to CSV" button in the Temperature tab
 2. A CSV file will be created with automatic folder structure:
    - **Folder**: `Incubator_Data/YYYYMMDD/`
    - **File**: `incubator_data_YYYYMMDD_HHMMSS.csv`
    - Example: `Incubator_Data/20260506/incubator_data_20260506_143022.csv`
-3. The file includes all sensor readings with timestamps
-4. Can be imported into Excel, Python, or other analysis tools
 
 ## Command Protocol (JSON)
 
@@ -131,9 +147,22 @@ python User_interface.py
 ### Microfluidics Control
 ```json
 {
-  "command": "set_flow",
+  "command": "set_pump_flow_and_mode",
   "pump": 1,
-  "flow": 25.5
+  "flow": 500,
+  "mode": "continuous"
+}
+```
+
+```json
+{
+  "command": "set_pump_flow_and_mode",
+  "pump": 1,
+  "flow": 1000,
+  "mode": "intermittent",
+  "feeding_time": 30,
+  "pause_time": 10,
+  "cycles": 5
 }
 ```
 
@@ -160,118 +189,99 @@ When you save data to CSV, the file includes the following columns:
 | Column | Unit | Description |
 |--------|------|-------------|
 | Timestamp | YYYY-MM-DD HH:MM:SS | Exact time of data reading |
-| Temp1 (°C) | °C | Temperature from Sensor 1 |
-| Humidity1 (%) | % | Humidity from Sensor 1 |
-| Temp2 (°C) | °C | Temperature from Sensor 2 |
-| Humidity2 (%) | % | Humidity from Sensor 2 |
+| Glass Sensor Temp (°C) | °C | Temperature from glass sensor |
+| Base Sensor Temp (°C) | °C | Temperature from base sensor |
+| Glass Sensor Humidity (%) | % | Humidity from glass sensor |
+| Base Sensor Humidity (%) | % | Humidity from base sensor |
 | UV (W/m²) | W/m² | UV radiation intensity |
-| CO2 (ppm) | ppm | CO₂ concentration level |
-| Flow1 (µL/min) | µL/min | Pump 1 flow rate |
-| Flow2 (µL/min) | µL/min | Pump 2 flow rate |
+| CO₂ (%) | % | CO₂ concentration level |
+| Pump 1 Flow (µL/min) | µL/min | Pump 1 flow rate |
+| Pump 2 Flow (µL/min) | µL/min | Pump 2 flow rate |
 
 Example CSV content:
 ```
-Timestamp,Temp1 (°C),Humidity1 (%),Temp2 (°C),Humidity2 (%),UV (W/m²),CO2 (ppm),Flow1 (µL/min),Flow2 (µL/min)
-2026-05-06 14:30:22,37.12,65.34,36.87,70.12,105.23,415.45,25.67,30.34
-2026-05-06 14:30:23,37.15,65.28,36.89,70.08,104.98,414.78,25.71,30.31
+Timestamp,Glass Sensor Temp (°C),Base Sensor Temp (°C),Glass Sensor Humidity (%),Base Sensor Humidity (%),UV (W/m²),CO₂ (%),Pump 1 Flow (µL/min),Pump 2 Flow (µL/min)
+2026-05-06 14:30:22,37.12,36.87,65.34,70.12,105.23,0.042,25.67,30.34
+2026-05-06 14:30:23,37.15,36.89,65.28,70.08,104.98,0.041,25.71,30.31
 ```
 
+## Configuration
+
+The application uses `config.py` for all customizable settings:
+
+### Key Configuration Sections
+- **ESP32_CONFIG**: Connection parameters
+- **TEMPERATURE_CONFIG**: Temperature control settings and plot scaling
+- **MICROFLUIDICS_CONFIG**: Pump settings and timing defaults
+- **SENSOR_CONFIG**: Sensor labels and display units
+- **GATING_CONFIG**: Default gating states and sensor groupings
+- **SIMULATION_CONFIG**: Test data generation parameters
+
+### Customization Examples
 ```python
-class SensorData:
-    - timestamps: Recent timestamps (up to 500 points)
-    - temp1/temp2: Temperature readings
-    - humidity1/humidity2: Humidity readings
-    - uv: UV radiation intensity
-    - co2: CO₂ concentration
-    - flow1/flow2: Pump flow rates
-```
+# Change temperature plot range
+TEMPERATURE_CONFIG["plot_range_degrees"] = 8
 
-The application maintains a rolling buffer of the last 500 data points for graph display.
+# Modify sensor labels
+SENSOR_CONFIG["temp1"]["label"] = "Glass Sensor"
+
+# Adjust microfluidics range
+MICROFLUIDICS_CONFIG["max_flow"] = 2000
+```
 
 ## UI Layout
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │  ThermoNoOC Incubator Control System  ● Connected       │
-│  [Connect ESP32]                                         │
+│  [Incubator Closed] [Microfluidics Closed]              │
 ├─────────────────────────────────────────────────────────┤
-│  🌡️ INCUBATOR MONITORING          [💾 Save Data to CSV]│
+│  [Clock] [Temperature] [UV Control] [Microfluidics]     │
+│                                                         │
+│  🌡️ TEMPERATURE TAB                                    │
 │  ┌─────────────────────┬─────────────────────────────┐  │
-│  │ Temp (S1+S2)        │ UV & CO₂                    │  │
+│  │ Temp Plot (8° range) │ Humidity & UV & CO₂ Plot   │  │
 │  │ [Graph]             │ [Graph]                     │  │
 │  ├─────────────────────┴─────────────────────────────┤  │
-│  │ Humidity (S1+S2)    [Graph - Single Plot]         │  │
-│  │ [Sensor Values: Temp, Humidity, UV, CO₂]         │  │
-├─────────────────────────────────────────────────────────┤
-│  🌡️ TEMPERATURE CONTROL                                 │
 │  │ Target Temperature: [========●========] 37.0°C   │  │
 │  │ Or enter value: [_________] [Set] (20-50°C)     │  │
+│  │ [💾 Save Data to CSV]                             │  │
 ├─────────────────────────────────────────────────────────┤
-│  💡 UV LED CONTROL (4 Groups)                          │
-│  │ Group1   │ Group2   │ Group3   │ Group4          │  │
-│  │ [Toggle] │ [Toggle] │ [Toggle] │ [Toggle]        │  │
-│  │ [Slider] │ [Slider] │ [Slider] │ [Slider]        │  │
-│  │ 50%      │ 50%      │ 50%      │ 50%             │  │
-├─────────────────────────────────────────────────────────┤
-│  💧 MICROFLUIDICS SECTION                               │
-│  │ [Flow Rate Graph - Both Pumps]                    │  │
-│  │ Pump 1               │ Pump 2                      │  │
-│  │ Flow: [_____] µL/min │ Flow: [_____] µL/min      │  │
-│  │ Current: 0.0 µL/min  │ Current: 0.0 µL/min      │  │
-│  │ [Set Flow]           │ [Set Flow]                  │  │
+│  💧 MICROFLUIDICS TAB                                  │
+│  │ [Flow Rate Graph]                                  │  │
+│  │ Pump 1                    │ Pump 2                 │  │
+│  │ [Continuous] [Intermittent] │ [Continuous] [Interm]│  │
+│  │ Flow: [_____] µL/min      │ Flow: [_____] µL/min │  │
+│  │ Feeding: [__] Pause: [__] │ Feeding: [__] Pause:[__]│  │
+│  │ Cycles: [__]              │ Cycles: [__]          │  │
+│  │ [Set Flow & Mode]         │ [Set Flow & Mode]      │  │
 └─────────────────────────────────────────────────────────┘
-```
-
-## Customization
-
-### Change ESP32 IP Address
-Edit in the `IncubatorUI.__init__()` method:
-```python
-self.esp32_host = "192.168.4.1"  # Change this
-self.esp32_port = 80              # Or this
-```
-
-### Adjust Temperature Range
-Edit in the `create_temperature_control_section()` method:
-```python
-self.temp_slider = ctk.CTkSlider(
-    control_frame,
-    from_=20,      # Minimum (currently 20°C)
-    to=50,         # Maximum (currently 50°C)
-    ...
-)
-```
-
-### Modify Graph Colors
-Edit the color values in:
-- `update_temperature_graph()`
-- `update_env_graph()`
-- `update_flow_graph()`
-
-Colors are defined as hex values (e.g., '#ff6b6b')
-
-### Change UI Theme
-In the beginning of the file:
-```python
-ctk.set_appearance_mode("dark")        # "dark", "light", "system"
-ctk.set_default_color_theme("blue")    # "blue", "green", "dark-blue"
 ```
 
 ## Troubleshooting
 
 ### Connection Issues
-- Ensure ESP32 is powered and in AP mode
+- Ensure ESP32 is powered and in WiFi AP mode
 - Check IP address matches ESP32 settings
 - Verify both devices are on same network
 - Check firewall settings
+
+### No Sensor Readings
+- Verify "Incubator Closed" and/or "Microfluidics Closed" buttons are pressed
+- Check ESP32 connection status
+- Ensure simulation is enabled in config.py for testing
 
 ### Graphs Not Updating
 - Verify simulation thread is running
 - Check matplotlib installation
 - Look for error messages in terminal
 
+### Microfluidics Timing Fields Disabled
+- Timing fields (feeding time, pause time, cycles) are only enabled in "Intermittent" mode
+- Switch to intermittent mode to configure timing parameters
+
 ### Slow Performance
-- Reduce graph update frequency (change `self.after(1000)`)
+- Reduce graph update frequency (change `GRAPH_CONFIG["update_interval"]`)
 - Limit the number of data points stored
 - Close other memory-intensive applications
 
@@ -287,7 +297,7 @@ Implement corresponding endpoints in your ESP32 firmware to handle the command J
 
 ## Future Enhancements
 
-- [ ] Data logging to CSV/Database
+- [ ] Data logging to database
 - [ ] Historical data analysis
 - [ ] Automated schedules/recipes
 - [ ] Multi-device support
