@@ -24,7 +24,7 @@ UV_CONFIG = {
     "num_groups": 4,             # Number of UV LED groups
     "min_intensity": 0,          # Minimum intensity (%)
     "max_intensity": 100,        # Maximum intensity (%)
-    "default_intensity": 50,     # Default intensity (%)
+    "default_intensity": 0,     # Default intensity (%)
     "intensity_steps": 100,      # Number of slider steps
 }
 
@@ -98,7 +98,7 @@ COLOR_CONFIG = {
 
 # Data Simulation Settings (for testing without ESP32)
 SIMULATION_CONFIG = {
-    "enabled": True,             # Enable data simulation
+    "enabled": True,            # Enable data simulation
     "temp1_center": 37,         # Center temperature sensor 1
     "temp1_variance": 0.5,      # Variance
     "temp2_center": 36.8,       # Center temperature sensor 2
@@ -109,12 +109,12 @@ SIMULATION_CONFIG = {
     "humidity2_variance": 5,    # Variance
     "uv_center": 100,           # Center UV level
     "uv_variance": 20,          # Variance
-    "co2_center": 0.04,         # Center CO2 level (as percentage)
-    "co2_variance": 0.005,      # Variance
-    "flow1_center": 25,         # Center flow pump 1
-    "flow1_variance": 2,        # Variance
-    "flow2_center": 30,         # Center flow pump 2
-    "flow2_variance": 2,        # Variance
+    "co2_center": 5,            # Center CO2 level (as percentage)
+    "co2_variance": 0.5,        # Variance
+    "flow1_center": 250,         # Center flow pump 1
+    "flow1_variance": 10,        # Variance
+    "flow2_center": 300,         # Center flow pump 2
+    "flow2_variance": 10,        # Variance
 }
 
 # Window Configuration
