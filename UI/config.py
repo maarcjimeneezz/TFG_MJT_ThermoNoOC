@@ -14,7 +14,7 @@ ESP32_CONFIG = {
 TEMPERATURE_CONFIG = {
     "min": 20,                   # Minimum temperature (°C)
     "max": 50,                   # Maximum temperature (°C)
-    "default": 37,               # Default target temperature (°C)
+    "default": 20,               # Default target temperature (°C)
     "steps": 150,                # Number of slider steps
 }
 
@@ -31,7 +31,7 @@ UV_CONFIG = {
 MICROFLUIDICS_CONFIG = {
     "num_pumps": 2,              # Number of micropumps
     "min_flow": 0,               # Minimum flow (µL/min)
-    "max_flow": 100,             # Maximum flow (µL/min)
+    "max_flow": 2000,             # Maximum flow (µL/min)
     "default_flow": 0,           # Default flow (µL/min)
 }
 
