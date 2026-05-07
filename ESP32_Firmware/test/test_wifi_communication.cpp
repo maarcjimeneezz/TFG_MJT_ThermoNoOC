@@ -7,10 +7,10 @@
 #include "WifiCommunication.h"
 
 // Configuration
-const char *ssid = "YOUR_WIFI_NAME";
-const char *password = "YOUR_WIFI_PASSWORD";
+const char *ssid = "iPhone de: Marc";
+const char *password = "marcjimeneztorra";
 const int port = 5000;
-const int LED_PIN = 2; // Most ESP32 DevKits use GPIO 2 for the internal LED
+const int LED_PIN = 2;
 
 // Objects
 WifiCommunication wifi(ssid, password, port);
