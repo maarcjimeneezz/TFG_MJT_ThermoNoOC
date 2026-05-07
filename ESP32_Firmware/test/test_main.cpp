@@ -32,6 +32,9 @@ void loop_pumps_logic();
 // ITO Glass Test
 void setup_ito_glass();
 void loop_ito_glass();
+// WiFi Communication Test
+void setup_wifi_communication();
+void loop_wifi_communication();
 
 // Test Selection Flags
 // Set to 1 to enable the specific test, 0 to skip it during compilation
@@ -39,9 +42,10 @@ void loop_ito_glass();
 #define ENABLE_CONTROL_NTC_FANS_TEST 0
 #define ENABLE_ENVIRONMENTAL_SENSORS_TEST 0
 #define ENABLE_I2C_SCANNER_TEST 0
-#define ENABLE_LED_ARRAY_TEST 1
+#define ENABLE_LED_ARRAY_TEST 0
 #define ENABLE_PUMPS_LOGIC_TEST 0
 #define ENABLE_ITO_GLASS_TEST 0
+#define ENABLE_WIFI_COMMUNICATION_TEST 1
 
 /**
  * @brief Main Setup function.
@@ -78,6 +82,10 @@ void setup(void)
 #if (ENABLE_ITO_GLASS_TEST == 1)
     setup_ito_glass();
 #endif
+
+#if (ENABLE_WIFI_COMMUNICATION_TEST == 1)
+    setup_wifi_communication();
+#endif
 }
 
 /**
@@ -112,5 +120,9 @@ void loop(void)
 
 #if (ENABLE_ITO_GLASS_TEST == 1)
     loop_ito_glass();
+#endif
+
+#if (ENABLE_WIFI_COMMUNICATION_TEST == 1)
+    loop_wifi_communication();
 #endif
 }
