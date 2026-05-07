@@ -6,16 +6,16 @@
 #include <Arduino.h>
 #include "WifiCommunication.h"
 
-// --- Configuration ---
+// Configuration
 const char *ssid = "YOUR_WIFI_NAME";
 const char *password = "YOUR_WIFI_PASSWORD";
 const int port = 5000;
 const int LED_PIN = 2; // Most ESP32 DevKits use GPIO 2 for the internal LED
 
-// --- Objects ---
+// Objects
 WifiCommunication wifi(ssid, password, port);
 
-void setup()
+void setup_wifi_communication()
 {
     Serial.begin(115200);
     pinMode(LED_PIN, OUTPUT);
@@ -29,7 +29,7 @@ void setup()
     Serial.println(WiFi.localIP());
 }
 
-void loop()
+void loop_wifi_communication()
 {
     // Keep the WiFi and TCP server running
     wifi.handle();
