@@ -1,14 +1,14 @@
 import customtkinter as ctk
-import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
-from matplotlib.animation import FuncAnimation
 import threading
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from collections import deque
 import socket
 import time
+
+from config import ESP32_CONFIG
 
 # Set appearance mode
 ctk.set_appearance_mode("dark")
@@ -28,18 +28,47 @@ class SensorData:
         self.co2 = deque(maxlen=max_points)
         self.flow1 = deque(maxlen=max_points)
         self.flow2 = deque(maxlen=max_points)
+        self.full_history = []
+        self.start_time = None
+        self.plot_seconds = 60
         
     def add_data(self, data_dict):
         """Add data point to sensor history"""
-        self.timestamps.append(data_dict.get('timestamp', datetime.now()))
-        self.temp1.append(data_dict.get('temp1', 0))
-        self.humidity1.append(data_dict.get('humidity1', 0))
-        self.temp2.append(data_dict.get('temp2', 0))
-        self.humidity2.append(data_dict.get('humidity2', 0))
-        self.uv.append(data_dict.get('uv', 0))
-        self.co2.append(data_dict.get('co2', 0))
-        self.flow1.append(data_dict.get('flow1', 0))
-        self.flow2.append(data_dict.get('flow2', 0))
+        timestamp = data_dict.get('timestamp', datetime.now())
+        if self.start_time is None:
+            self.start_time = timestamp
+
+        entry = {
+            'timestamp': timestamp,
+            'temp1': data_dict.get('temp1', 0),
+            'humidity1': data_dict.get('humidity1', 0),
+            'temp2': data_dict.get('temp2', 0),
+            'humidity2': data_dict.get('humidity2', 0),
+            'uv': data_dict.get('uv', 0),
+            'co2': data_dict.get('co2', 0),
+            'flow1': data_dict.get('flow1', 0),
+            'flow2': data_dict.get('flow2', 0),
+        }
+
+        self.full_history.append(entry)
+        self.timestamps.append(entry['timestamp'])
+        self.temp1.append(entry['temp1'])
+        self.humidity1.append(entry['humidity1'])
+        self.temp2.append(entry['temp2'])
+        self.humidity2.append(entry['humidity2'])
+        self.uv.append(entry['uv'])
+        self.co2.append(entry['co2'])
+        self.flow1.append(entry['flow1'])
+        self.flow2.append(entry['flow2'])
+
+    def get_recent_data(self, seconds=None):
+        """Return data points from the last N seconds for plotting."""
+        if seconds is None:
+            seconds = self.plot_seconds
+
+        cutoff = datetime.now() - timedelta(seconds=seconds)
+        recent = [entry for entry in self.full_history if entry['timestamp'] >= cutoff]
+        return recent
 
     def clear(self):
         self.timestamps.clear()
@@ -51,6 +80,8 @@ class SensorData:
         self.co2.clear()
         self.flow1.clear()
         self.flow2.clear()
+        self.full_history.clear()
+        self.start_time = None
 
 
 class IncubatorUI(ctk.CTk):
@@ -67,8 +98,11 @@ class IncubatorUI(ctk.CTk):
         # Data storage
         self.sensor_data = SensorData()
         self.wifi_connected = False
-        self.esp32_host = "192.168.4.1"
-        self.esp32_port = 80
+        self.esp32_host = ESP32_CONFIG.get('host', '192.168.0.132')
+        self.esp32_port = ESP32_CONFIG.get('port', 5000)
+        self.esp32_timeout = ESP32_CONFIG.get('timeout', 2)
+        self.stop_data_event = threading.Event()
+        self.receive_thread = None
         self.incubator_closed = False
         self.microfluidics_closed = False
         
@@ -78,7 +112,6 @@ class IncubatorUI(ctk.CTk):
         
         # Setup UI
         self.setup_ui()
-        self.start_data_simulation()
         
     def setup_ui(self):
         """Setup main UI layout"""
@@ -133,7 +166,7 @@ class IncubatorUI(ctk.CTk):
             header_frame,
             text="00:00:00",
             font=("Helvetica", 18, "bold"),
-            text_color="#00ff00"
+            text_color="#6c5ce7"
         )
         self.clock_label.grid(row=0, column=1, sticky="e", padx=20)
         
@@ -263,7 +296,7 @@ class IncubatorUI(ctk.CTk):
                 self.temperature_sheet.update_graphs()
                 self.uv_sheet.update_graphs()
                 self.microfluidics_sheet.update_graphs()
-                self.after(1000)
+                time.sleep(1)
         
         thread = threading.Thread(target=update_graphs, daemon=True)
         thread.start()
@@ -284,29 +317,82 @@ class IncubatorUI(ctk.CTk):
         def connection_thread():
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(2)
+                sock.settimeout(self.esp32_timeout)
                 result = sock.connect_ex((self.esp32_host, self.esp32_port))
                 sock.close()
-                
+
                 if result == 0:
                     self.wifi_connected = True
                     self.connection_indicator.configure(text_color="#44ff44")
                     self.connection_label.configure(text="Connected")
                     self.connect_btn.configure(text="Disconnect", command=self.disconnect_from_esp32)
+                    self.stop_data_event.clear()
+                    self.start_data_reception()
                 else:
                     self.show_error("Failed to connect to ESP32")
             except Exception as e:
                 self.show_error(f"Connection error: {str(e)}")
-        
+
         thread = threading.Thread(target=connection_thread, daemon=True)
         thread.start()
-        
+
     def disconnect_from_esp32(self):
         """Disconnect from ESP32"""
         self.wifi_connected = False
         self.connection_indicator.configure(text_color="#ff4444")
         self.connection_label.configure(text="Disconnected")
         self.connect_btn.configure(text="Connect ESP32", command=self.connect_to_esp32)
+        self.stop_data_event.set()
+
+    def request_sensor_data(self):
+        """Request fresh sensor data from ESP32."""
+        if not self.wifi_connected:
+            return None
+
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(self.esp32_timeout)
+            sock.connect((self.esp32_host, self.esp32_port))
+            payload = json.dumps({'command': 'get_sensor_data'})
+            sock.sendall(payload.encode('utf-8'))
+
+            response = b''
+            while True:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                response += chunk
+
+            sock.close()
+            if not response:
+                return None
+
+            data = json.loads(response.decode('utf-8'))
+            if isinstance(data, dict):
+                data['timestamp'] = datetime.now()
+                return data
+        except Exception:
+            self.disconnect_from_esp32()
+        return None
+
+    def start_data_reception(self):
+        """Start polling sensor data from ESP32."""
+        if self.receive_thread and self.receive_thread.is_alive():
+            return
+
+        def receive_loop():
+            while not self.stop_data_event.is_set():
+                if not self.wifi_connected:
+                    time.sleep(0.2)
+                    continue
+
+                data = self.request_sensor_data()
+                if data:
+                    self.sensor_data.add_data(data)
+                time.sleep(1)
+
+        self.receive_thread = threading.Thread(target=receive_loop, daemon=True)
+        self.receive_thread.start()
         
     def send_command_to_esp32(self, command):
         """Send command to ESP32"""
@@ -316,13 +402,13 @@ class IncubatorUI(ctk.CTk):
         def send_thread():
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(2)
+                sock.settimeout(self.esp32_timeout)
                 sock.connect((self.esp32_host, self.esp32_port))
-                
+
                 # Convert command to JSON and send
                 data = json.dumps(command).encode('utf-8')
                 sock.sendall(data)
-                
+
                 sock.close()
             except Exception as e:
                 print(f"Send error: {str(e)}")
@@ -334,106 +420,90 @@ class IncubatorUI(ctk.CTk):
         """Save sensor data to CSV file"""
         import csv
         from pathlib import Path
-        
-        if len(self.sensor_data.temp1) == 0:
+
+        if len(self.sensor_data.full_history) == 0:
             self.show_error("No data to save")
             return
-        
-        try:
-            # Create directory structure
-            now = datetime.now()
-            date_folder = now.strftime("%Y%m%d")
-            data_dir = Path("Incubator_Data") / date_folder
-            data_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Create filename with timestamp
-            timestamp = now.strftime("%Y%m%d_%H%M%S")
-            filename = f"incubator_data_{timestamp}.csv"
-            filepath = data_dir / filename
-            
-            # Write data to CSV
-            with open(filepath, 'w', newline='') as csvfile:
-                fieldnames = ['Timestamp', 'Temp1 (C)', 'Humidity1 (%)', 'Temp2 (C)', 
-                             'Humidity2 (%)', 'UV (W/m2)', 'CO2 (%)', 'Flow1 (uL/min)', 'Flow2 (uL/min)']
-                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                
-                writer.writeheader()
-                for i in range(len(self.sensor_data.temp1)):
-                    writer.writerow({
-                        'Timestamp': self.sensor_data.timestamps[i].strftime("%Y-%m-%d %H:%M:%S"),
-                        'Temp1 (C)': f"{self.sensor_data.temp1[i]:.2f}",
-                        'Humidity1 (%)': f"{self.sensor_data.humidity1[i]:.2f}",
-                        'Temp2 (C)': f"{self.sensor_data.temp2[i]:.2f}",
-                        'Humidity2 (%)': f"{self.sensor_data.humidity2[i]:.2f}",
-                        'UV (W/m2)': f"{self.sensor_data.uv[i]:.2f}",
-                        'CO2 (%)': f"{(self.sensor_data.co2[i] / 10000):.4f}",
-                        'Flow1 (uL/min)': f"{self.sensor_data.flow1[i]:.2f}",
-                        'Flow2 (uL/min)': f"{self.sensor_data.flow2[i]:.2f}",
-                    })
-            
-            # Show success message
-            success_window = ctk.CTkToplevel(self)
-            success_window.title("Success")
-            success_window.geometry("350x140")
-            success_window.resizable(False, False)
-            
-            msg = ctk.CTkLabel(
-                success_window,
-                text=f"Data saved successfully!\n\nFolder: Incubator_Data/{date_folder}\nFile: {filename}",
-                wraplength=320
-            )
-            msg.pack(padx=10, pady=15)
-            
-            btn = ctk.CTkButton(success_window, text="OK", command=success_window.destroy)
-            btn.pack(pady=10)
-            
-        except Exception as e:
-            self.show_error(f"Error saving data: {str(e)}")
-        
-    def start_data_simulation(self):
-        """Simulate sensor data for testing"""
-        import random
-        
-        def simulation_thread():
-            while True:
-                data = {'timestamp': datetime.now()}
-                
-                if self.incubator_closed:
-                    data.update({
-                        'temp1': 37 + random.uniform(-0.5, 0.5),
-                        'humidity1': 65 + random.uniform(-5, 5),
-                        'temp2': 36.8 + random.uniform(-0.5, 0.5),
-                        'humidity2': 70 + random.uniform(-5, 5),
-                        'uv': 100 + random.uniform(-20, 20),
-                        'co2': 400 + random.uniform(-50, 50),
-                    })
-                else:
-                    # Clear incubator data
-                    if len(self.sensor_data.temp1) > 0:
-                        self.sensor_data.temp1.clear()
-                        self.sensor_data.humidity1.clear()
-                        self.sensor_data.temp2.clear()
-                        self.sensor_data.humidity2.clear()
-                        self.sensor_data.uv.clear()
-                        self.sensor_data.co2.clear()
-                
-                if self.microfluidics_closed:
-                    data.update({
-                        'flow1': 25 + random.uniform(-2, 2),
-                        'flow2': 30 + random.uniform(-2, 2),
-                    })
-                else:
-                    # Clear microfluidics data
-                    if len(self.sensor_data.flow1) > 0:
-                        self.sensor_data.flow1.clear()
-                        self.sensor_data.flow2.clear()
-                
-                if data:
-                    self.sensor_data.add_data(data)
-                threading.Event().wait(1)
-        
-        thread = threading.Thread(target=simulation_thread, daemon=True)
-        thread.start()
+
+        fields = [
+            ('temp1', 'Temperature 1 (C)'),
+            ('humidity1', 'Humidity 1 (%)'),
+            ('temp2', 'Temperature 2 (C)'),
+            ('humidity2', 'Humidity 2 (%)'),
+            ('uv', 'UV (W/m2)'),
+            ('co2', 'CO2 (%)'),
+            ('flow1', 'Flow1 (uL/min)'),
+            ('flow2', 'Flow2 (uL/min)'),
+        ]
+
+        selection_window = ctk.CTkToplevel(self)
+        selection_window.title("Select export data")
+        selection_window.geometry("360x420")
+        selection_window.resizable(False, False)
+        selection_window.grab_set()
+
+        label = ctk.CTkLabel(selection_window, text="Select which data columns to export:", anchor="w")
+        label.pack(fill="x", padx=20, pady=(20, 10))
+
+        checkbox_vars = []
+        for key, title in fields:
+            var = ctk.BooleanVar(value=True)
+            checkbox = ctk.CTkCheckBox(selection_window, text=title, variable=var)
+            checkbox.pack(anchor="w", padx=20, pady=4)
+            checkbox_vars.append((key, title, var))
+
+        def export_selected():
+            selected = [item for item in checkbox_vars if item[2].get()]
+            if not selected:
+                self.show_error("Please select at least one data field to export.")
+                return
+
+            try:
+                now = datetime.now()
+                date_folder = now.strftime("%Y%m%d")
+                data_dir = Path("Incubator_Data") / date_folder
+                data_dir.mkdir(parents=True, exist_ok=True)
+                timestamp = now.strftime("%Y%m%d_%H%M%S")
+                filename = f"incubator_data_{timestamp}.csv"
+                filepath = data_dir / filename
+
+                fieldnames = ['Timestamp'] + [title for (_, title, _) in selected]
+                with open(filepath, 'w', newline='') as csvfile:
+                    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                    writer.writeheader()
+                    for entry in self.sensor_data.full_history:
+                        row = {
+                            'Timestamp': entry['timestamp'].strftime("%Y-%m-%d %H:%M:%S")
+                        }
+                        for key, title, _ in selected:
+                            value = entry.get(key, 0)
+                            if key == 'co2':
+                                value = value / 10000.0
+                            row[title] = f"{value:.4f}" if isinstance(value, float) else value
+                        writer.writerow(row)
+
+                selection_window.destroy()
+                success_window = ctk.CTkToplevel(self)
+                success_window.title("Success")
+                success_window.geometry("360x140")
+                success_window.resizable(False, False)
+                msg = ctk.CTkLabel(
+                    success_window,
+                    text=f"Data saved successfully!\n\nFolder: Incubator_Data/{date_folder}\nFile: {filename}",
+                    wraplength=320
+                )
+                msg.pack(padx=10, pady=15)
+                btn = ctk.CTkButton(success_window, text="OK", command=success_window.destroy)
+                btn.pack(pady=10)
+            except Exception as e:
+                self.show_error(f"Error saving data: {str(e)}")
+
+        button_frame = ctk.CTkFrame(selection_window)
+        button_frame.pack(fill="x", padx=20, pady=15)
+        export_btn = ctk.CTkButton(button_frame, text="Export Selected", command=export_selected)
+        export_btn.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        cancel_btn = ctk.CTkButton(button_frame, text="Cancel", command=selection_window.destroy)
+        cancel_btn.pack(side="left", fill="x", expand=True)
         
     def show_error(self, message):
         """Show error message"""
@@ -573,64 +643,57 @@ class TemperatureSheet:
         self.ax_temp.clear()
         self.ax_humidity.clear()
         self.ax_co2.clear()
-        
-        if len(self.main_app.sensor_data.temp1) > 0:
-            x = range(len(self.main_app.sensor_data.temp1))
-            
-            # Temperature
-            self.ax_temp.plot(x, list(self.main_app.sensor_data.temp1), label='Glass sensor', color='#ff6b6b', linewidth=2)
-            self.ax_temp.plot(x, list(self.main_app.sensor_data.temp2), label='Base sensor', color='#ff9999', linewidth=2, linestyle='--')
+
+        recent = self.main_app.sensor_data.get_recent_data(60)
+        if recent:
+            x = range(len(recent))
+            temp1 = [entry['temp1'] for entry in recent]
+            temp2 = [entry['temp2'] for entry in recent]
+            humidity1 = [entry['humidity1'] for entry in recent]
+            humidity2 = [entry['humidity2'] for entry in recent]
+            co2 = [entry['co2'] for entry in recent]
+
+            self.ax_temp.plot(x, temp1, label='Glass sensor', color='#ff6b6b', linewidth=2)
+            self.ax_temp.plot(x, temp2, label='Base sensor', color='#ff9999', linewidth=2, linestyle='--')
             self.ax_temp.set_title('Temperature', fontsize=11, color='white')
             self.ax_temp.set_ylabel('Temperature (C)', color='white')
             self.ax_temp.tick_params(colors='white')
             self.ax_temp.legend(loc='upper left', fontsize=9)
             self.ax_temp.grid(True, alpha=0.2)
-            
-            # Set y-axis limits for temperature
-            if len(self.main_app.sensor_data.temp1) > 0:
-                self.ax_temp.set_ylim(20, 50)
-            
-            # Humidity
-            self.ax_humidity.plot(x, list(self.main_app.sensor_data.humidity1), label='Glass sensor', color='#4ecdc4', linewidth=2)
-            self.ax_humidity.plot(x, list(self.main_app.sensor_data.humidity2), label='Base sensor', color='#7ee8de', linewidth=2, linestyle='--')
+            self.ax_temp.set_ylim(20, 50)
+
+            self.ax_humidity.plot(x, humidity1, label='Glass sensor', color='#4ecdc4', linewidth=2)
+            self.ax_humidity.plot(x, humidity2, label='Base sensor', color='#7ee8de', linewidth=2, linestyle='--')
             self.ax_humidity.set_title('Humidity', fontsize=11, color='white')
             self.ax_humidity.set_ylabel('Humidity (%)', color='white')
             self.ax_humidity.tick_params(colors='white')
             self.ax_humidity.legend(loc='upper left', fontsize=9)
             self.ax_humidity.grid(True, alpha=0.2)
-            
-            # Set y-axis limits for humidity
-            if len(self.main_app.sensor_data.humidity1) > 0:
-                self.ax_humidity.set_ylim(0, 100)
-            
-            # CO2
-            co2_percent = [value / 10000.0 for value in self.main_app.sensor_data.co2]
+            self.ax_humidity.set_ylim(0, 100)
+
+            co2_percent = [value / 10000.0 for value in co2]
             self.ax_co2.plot(x, co2_percent, color='#95e1d3', linewidth=2)
             self.ax_co2.fill_between(x, co2_percent, alpha=0.3, color='#95e1d3')
             self.ax_co2.set_title('CO2 Level', fontsize=11, color='white')
             self.ax_co2.set_ylabel('CO2 (%)', color='white')
             self.ax_co2.tick_params(colors='white')
             self.ax_co2.grid(True, alpha=0.2)
-            
-            # Set y-axis limits for CO2
-            if len(self.main_app.sensor_data.co2) > 0:
-                self.ax_co2.set_ylim(0, 10)
-            
+            self.ax_co2.set_ylim(0, 10)
+
             self.fig_temp.canvas.draw()
             self.fig_co2.canvas.draw()
-            
-            # Update sensor labels
-            if len(self.main_app.sensor_data.temp1) > 0:
-                self.labels['temp1'].configure(text=f"{self.main_app.sensor_data.temp1[-1]:.1f}")
-                self.labels['humidity1'].configure(text=f"{self.main_app.sensor_data.humidity1[-1]:.1f}")
-                self.labels['temp2'].configure(text=f"{self.main_app.sensor_data.temp2[-1]:.1f}")
-                self.labels['humidity2'].configure(text=f"{self.main_app.sensor_data.humidity2[-1]:.1f}")
-                self.labels['co2'].configure(text=f"{(self.main_app.sensor_data.co2[-1] / 10000.0):.4f}")
+
+            last_point = recent[-1]
+            self.labels['temp1'].configure(text=f"{last_point['temp1']:.1f}")
+            self.labels['humidity1'].configure(text=f"{last_point['humidity1']:.1f}")
+            self.labels['temp2'].configure(text=f"{last_point['temp2']:.1f}")
+            self.labels['humidity2'].configure(text=f"{last_point['humidity2']:.1f}")
+            self.labels['co2'].configure(text=f"{(last_point['co2'] / 10000.0):.4f}")
         else:
             self.ax_temp.axis('off')
             self.ax_humidity.axis('off')
             self.ax_co2.axis('off')
-            self.ax_temp.text(0.5, 0.5, 'No readings\nClose both incubator and microfluidics', ha='center', va='center', color='white', fontsize=14)
+            self.ax_temp.text(0.5, 0.5, 'No readings\nConnect to ESP32 to begin', ha='center', va='center', color='white', fontsize=14)
             self.fig_temp.canvas.draw()
             self.fig_co2.canvas.draw()
             for key in self.labels:
@@ -756,22 +819,26 @@ class UVSheet:
     def update_graphs(self):
         """Update UV graphs"""
         self.ax_uv.clear()
-        
-        if len(self.main_app.sensor_data.uv) > 0:
-            x = range(len(self.main_app.sensor_data.uv))
-            
-            self.ax_uv.plot(x, list(self.main_app.sensor_data.uv), color='#ffd93d', linewidth=2)
-            self.ax_uv.fill_between(x, list(self.main_app.sensor_data.uv), alpha=0.3, color='#ffd93d')
+
+        recent = self.main_app.sensor_data.get_recent_data(60)
+        uv_values = [entry['uv'] for entry in recent] if recent else []
+
+        if uv_values:
+            x = range(len(uv_values))
+            self.ax_uv.plot(x, uv_values, color='#ffd93d', linewidth=2)
+            self.ax_uv.fill_between(x, uv_values, alpha=0.3, color='#ffd93d')
             self.ax_uv.set_title('UV Radiation', fontsize=12, color='white')
             self.ax_uv.set_xlabel('Time', color='white')
             self.ax_uv.set_ylabel('W/m2', color='white')
             self.ax_uv.tick_params(colors='white')
             self.ax_uv.grid(True, alpha=0.2)
-            
             self.fig_uv.canvas.draw()
-            
-            # Update UV label
-            self.uv_current_label.configure(text=f"Current UV: {self.main_app.sensor_data.uv[-1]:.1f} W/m2")
+            self.uv_current_label.configure(text=f"Current UV: {uv_values[-1]:.1f} W/m2")
+        else:
+            self.ax_uv.axis('off')
+            self.ax_uv.text(0.5, 0.5, 'No readings\nConnect to ESP32 to begin', ha='center', va='center', color='white', fontsize=14)
+            self.fig_uv.canvas.draw()
+            self.uv_current_label.configure(text="Current UV: ---")
             
     def toggle_uv_group(self, group_id):
         """Toggle UV group on/off"""
@@ -924,27 +991,37 @@ class MicrofluidicsSheet:
     def update_graphs(self):
         """Update flow graph"""
         self.ax_flow.clear()
-        
-        if len(self.main_app.sensor_data.flow1) > 0:
-            x = range(len(self.main_app.sensor_data.flow1))
-            
-            self.ax_flow.plot(x, list(self.main_app.sensor_data.flow1), label='Pump 1', color='#6c5ce7', linewidth=2)
-            self.ax_flow.plot(x, list(self.main_app.sensor_data.flow2), label='Pump 2', color='#a29bfe', linewidth=2)
+
+        recent = self.main_app.sensor_data.get_recent_data(60)
+        flow1 = [entry['flow1'] for entry in recent]
+        flow2 = [entry['flow2'] for entry in recent]
+
+        if flow1 or flow2:
+            x = range(max(len(flow1), len(flow2)))
+            if flow1:
+                self.ax_flow.plot(range(len(flow1)), flow1, label='Pump 1', color='#6c5ce7', linewidth=2)
+            if flow2:
+                self.ax_flow.plot(range(len(flow2)), flow2, label='Pump 2', color='#a29bfe', linewidth=2)
             self.ax_flow.set_title('Microfluidics Flow Rate', fontsize=12, color='white')
             self.ax_flow.set_xlabel('Time', color='white')
             self.ax_flow.set_ylabel('Flow (uL/min)', color='white')
             self.ax_flow.tick_params(colors='white')
             self.ax_flow.legend(loc='upper right', fontsize=9)
             self.ax_flow.grid(True, alpha=0.2)
-            
             self.fig_flow.canvas.draw()
-            
-            # Update flow labels
-            self.pump_labels[1].configure(text=f"Current Flow: {self.main_app.sensor_data.flow1[-1]:.1f} uL/min")
-            self.pump_labels[2].configure(text=f"Current Flow: {self.main_app.sensor_data.flow2[-1]:.1f} uL/min")
+
+            if flow1:
+                self.pump_labels[1].configure(text=f"Current Flow: {flow1[-1]:.1f} uL/min")
+            else:
+                self.pump_labels[1].configure(text="Current Flow: ---")
+
+            if flow2:
+                self.pump_labels[2].configure(text=f"Current Flow: {flow2[-1]:.1f} uL/min")
+            else:
+                self.pump_labels[2].configure(text="Current Flow: ---")
         else:
             self.ax_flow.axis('off')
-            self.ax_flow.text(0.5, 0.5, 'No flow readings\nClose both incubator and microfluidics', ha='center', va='center', color='white', fontsize=14)
+            self.ax_flow.text(0.5, 0.5, 'No flow readings\nConnect to ESP32 to begin', ha='center', va='center', color='white', fontsize=14)
             self.fig_flow.canvas.draw()
             self.pump_labels[1].configure(text="Current Flow: ---")
             self.pump_labels[2].configure(text="Current Flow: ---")
