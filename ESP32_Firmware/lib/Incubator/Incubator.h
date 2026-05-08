@@ -32,10 +32,25 @@ private:
 
 public:
     // --- Public Environmental Data ---
-    float temp1, hum1; // Data from SHT35 #1
-    float temp2, hum2; // Data from SHT35 #2
-    float uvIndex;     // Data from LTR390
-    uint32_t co2PPM;   // Data from T6615 (CO2)
+    float temp1, hum1;  // Data from SHT35 #1
+    float temp2, hum2;  // Data from SHT35 #2
+    float uvIndex;      // Data from LTR390
+    uint32_t co2PPM;    // Data from T6615 (CO2)
+    float flow1, flow2; // Data from SLF3S-0600F (Flow Sensors)
+
+    // --- Target Environmental Parameters ---
+    float targetTemperature = 37.0;                   // Desired temperature for the incubator
+    bool uvEnabled[4] = {false, false, false, false}; // UV LED group enable states
+    int uvIntensity[4] = {0, 0, 0, 0};                // UV LED group intensity (0-255)
+
+    struct PumpConfig
+    {
+        float flow = 0.0;           // Desired flow rate in mL/min
+        String mode = "continuous"; // "continuous" or "pulsed"
+        float feedingTime = 0.0;    // For pulsed mode: time to feed in seconds
+        float pauseTime = 0.0;      // For pulsed mode: time to pause in seconds
+        int cycles = 0;             // For pulsed mode: number of feed/pause cycles
+    } pumpConfig[2];                // Configuration for 2 pumps
 
     Incubator();
 
@@ -54,6 +69,8 @@ public:
      * @param power PWM duty cycle (0 to 255).
      */
     void setITOPower(uint8_t power);
+
+    void updateActuators(); // Updates UV LEDs and pumps based on target parameters
 };
 
 #endif
