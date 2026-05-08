@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include "Microfluidics.h"
+#include "LED_Array.h"
 #include "Pinout.h"
 #include <SHTSensor.h>       // SHT3x library
 #include <Adafruit_LTR390.h> // UV Sensor library
@@ -33,6 +34,7 @@ private:
 
 public:
     Microfluidics fluidics; // Manages pumps and flow sensors
+    LED_Array leds;         // Manages UV LED array
 
     // --- Public Environmental Data (Readings) ---
     float temp1, hum1;  // Data from SHT35 #1

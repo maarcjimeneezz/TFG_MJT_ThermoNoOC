@@ -1,81 +1,99 @@
 /**
  * @file WifiCommunication.cpp
- * @brief Implementation of robust TCP communication for TFG Incubator.
+ * @brief Implementation of WiFi Access Point & JSON Server for TFG Incubator.
  */
 
 #include "WifiCommunication.h"
 
-WifiCommunication::WifiCommunication(const char* ssid, const char* password, uint16_t port) 
-    : _ssid(ssid), _password(password), _port(port), _server(port) {
-    _lastConnectionAttempt = 0;
-}
+WifiCommunication::WifiCommunication(const char *ssid, const char *password, uint16_t port)
+    : _ssid(ssid), _password(password), _port(port), _server(port) {}
 
-void WifiCommunication::begin() {
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(_ssid, _password);
-    
-    Serial.print("Connecting to WiFi: ");
+void WifiCommunication::begin(IPAddress ip, IPAddress gw, IPAddress sn)
+{
+    _local_IP = ip;
+    _gateway = gw;
+    _subnet = sn;
+
+    // Initialize WiFi in AP mode (Access Point)
+    WiFi.softAPConfig(_local_IP, _gateway, _subnet);
+    WiFi.softAP(_ssid, _password);
+
+    _server.begin();
+
+    Serial.println("WiFi AP started.");
+    Serial.print("AP SSID: ");
     Serial.println(_ssid);
-    
-    // Wait for connection (blocking only during setup)
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-        delay(500);
-        Serial.print(".");
-        attempts++;
-    }
-
-    if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("\nWiFi Connected!");
-        Serial.print("IP Address: ");
-        Serial.println(WiFi.localIP());
-        _server.begin();
-    } else {
-        Serial.println("\nWiFi Connection Failed. Will retry in background.");
-    }
+    Serial.print("IP: ");
+    Serial.println(WiFi.softAPIP());
 }
 
-void WifiCommunication::handle() {
-    // 1. Check WiFi Connection
-    if (WiFi.status() != WL_CONNECTED) {
-        if (millis() - _lastConnectionAttempt > _reconnectInterval) {
-            _lastConnectionAttempt = millis();
-            WiFi.disconnect();
-            WiFi.reconnect();
+String WifiCommunication::getRequest(WiFiClient &client)
+{
+    String request = "";
+    while (client.available())
+    {
+        char c = client.read();
+        request += c;
+    }
+    return request;
+}
+
+String WifiCommunication::extractJsonValue(String data, String key)
+{
+    // Simple JSON parser: finds "key":"value" or "key":value
+    String searchStr = "\"" + key + "\":";
+    int keyPos = data.indexOf(searchStr);
+
+    if (keyPos == -1)
+    {
+        return "";
+    }
+
+    int startPos = keyPos + searchStr.length();
+
+    // Skip whitespace
+    while (startPos < data.length() && data[startPos] == ' ')
+    {
+        startPos++;
+    }
+
+    // Check if value is quoted
+    if (data[startPos] == '"')
+    {
+        startPos++;
+        int endPos = data.indexOf('"', startPos);
+        if (endPos != -1)
+        {
+            return data.substring(startPos, endPos);
         }
-        return;
     }
-
-    // 2. Manage TCP Client
-    if (!_client || !_client.connected()) {
-        WiFiClient newClient = _server.available();
-        if (newClient) {
-            _client = newClient;
-            _client.setNoDelay(true); // Optimization for real-time control
-            Serial.println("PC Interface connected.");
+    else
+    {
+        // Unquoted number or boolean
+        int endPos = startPos;
+        while (endPos < data.length() && data[endPos] != ',' && data[endPos] != '}' && data[endPos] != ' ')
+        {
+            endPos++;
+        }
+        if (endPos > startPos)
+        {
+            return data.substring(startPos, endPos);
         }
     }
-}
 
-void WifiCommunication::sendTelemetry(String data) {
-    if (_client && _client.connected()) {
-        _client.println(data); // LabVIEW/Python read until \n
-    }
-}
-
-String WifiCommunication::getCommand() {
-    if (_client && _client.connected() && _client.available()) {
-        String cmd = _client.readStringUntil('\n');
-        cmd.trim();
-        return cmd;
-    }
     return "";
 }
 
-bool WifiCommunication::isClientConnected() {
-    return (_client && _client.connected());
-}
-
-String WifiCommunication::getIP() {
-    return WiFi.localIP().toString();
+String WifiCommunication::buildSensorJson(float t1, float h1, float t2, float h2, float uv, float co2, float f1, float f2)
+{
+    // Build JSON response with sensor data
+    String json = "{\"temp1\":" + String(t1, 2) +
+                  ",\"hum1\":" + String(h1, 2) +
+                  ",\"temp2\":" + String(t2, 2) +
+                  ",\"hum2\":" + String(h2, 2) +
+                  ",\"uv\":" + String(uv, 2) +
+                  ",\"co2\":" + String(co2, 0) +
+                  ",\"flow1\":" + String(f1, 2) +
+                  ",\"flow2\":" + String(f2, 2) + "}\n";
+    return json;
 }
