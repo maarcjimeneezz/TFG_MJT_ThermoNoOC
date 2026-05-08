@@ -1,8 +1,8 @@
 # ThermoNoOC: ESP32 Firmware for Intelligent Incubation Control
 
 **Version**: 1.0  
-**Project**: TFG - Thermo-Microfluidic Incubator with Nocodazole Overflow Control  
-**Platform**: ESP32 (Arduino Framework)  
+**Project**: TFG - Thermo-Microfluidic Incubator with Flow Control  
+**Platform**: ESP32 (Arduino Framework)
 **Build System**: PlatformIO
 
 This repository contains the complete, production-ready firmware for an ESP32-based biomedical incubator system. The firmware provides real-time environmental monitoring, temperature regulation, UV lighting control, and microfluidic pump management through an intuitive WiFi interface.
