@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <Wire.h>
+#include "Microfluidics.h"
 #include "Pinout.h"
 #include <SHTSensor.h>       // SHT3x library
 #include <Adafruit_LTR390.h> // UV Sensor library
@@ -31,14 +32,16 @@ private:
     void selectBus(uint8_t channel);
 
 public:
-    // --- Public Environmental Data ---
+    Microfluidics fluidics; // Manages pumps and flow sensors
+
+    // --- Public Environmental Data (Readings) ---
     float temp1, hum1;  // Data from SHT35 #1
     float temp2, hum2;  // Data from SHT35 #2
     float uvIndex;      // Data from LTR390
     uint32_t co2PPM;    // Data from T6615 (CO2)
     float flow1, flow2; // Data from SLF3S-0600F (Flow Sensors)
 
-    // --- Target Environmental Parameters ---
+    // --- Target Environmental Parameters (UI Commands) ---
     float targetTemperature = 37.0;                   // Desired temperature for the incubator
     bool uvEnabled[4] = {false, false, false, false}; // UV LED group enable states
     int uvIntensity[4] = {0, 0, 0, 0};                // UV LED group intensity (0-255)
@@ -70,7 +73,10 @@ public:
      */
     void setITOPower(uint8_t power);
 
-    void updateActuators(); // Updates UV LEDs and pumps based on target parameters
+    /**
+     * Updates UV LEDs, ITO heater, and pumps based on the target parameters.
+     */
+    void updateActuators();
 };
 
 #endif

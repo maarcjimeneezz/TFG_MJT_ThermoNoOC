@@ -1,6 +1,6 @@
 /**
  * @file WifiCommunication.h
- * @brief High-level TCP Server for ESP32 to PC (Python/LabVIEW) communication.
+ * @brief High-level WiFi Access Point & JSON Server for ESP32 to PC communication.
  */
 
 #ifndef WIFI_COMMUNICATION_H
@@ -16,19 +16,25 @@ private:
     IPAddress _gateway;
     IPAddress _subnet;
 
+    const char *_ssid;
+    const char *_password;
+    uint16_t _port;
+
 public:
     /**
-     * @param ssid WiFi Network Name
+     * @param ssid WiFi Network Name (AP Name)
      * @param password WiFi Password
      * @param port TCP Port (default 5000)
      */
     WifiCommunication(const char *ssid, const char *password, uint16_t port);
 
-    // Initializes WiFi and starts TCP server
+    // Initializes WiFi in Access Point mode and starts TCP server
     void begin(IPAddress ip, IPAddress gw, IPAddress sn);
 
-    // Main loop to handle incoming client connections and requests
+    // Main functions to handle incoming client data
     String getRequest(WiFiClient &client);
+
+    // JSON parsers and builders
     String extractJsonValue(String data, String key);
     String buildSensorJson(float t1, float h1, float t2, float h2, float uv, float co2, float f1, float f2);
 
