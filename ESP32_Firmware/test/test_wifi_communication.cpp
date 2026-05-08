@@ -7,8 +7,8 @@
 #include "WifiCommunication.h"
 
 // Configuration
-const char *ssid = "iPhone de: Marc";
-const char *password = "marcjimeneztorra";
+const char *ssid = "planta2-historic";
+const char *password = "planta2historic";
 const int port = 5000;
 const int LED_PIN = 2;
 
