@@ -67,8 +67,8 @@ class IncubatorUI(ctk.CTk):
         # Data storage
         self.sensor_data = SensorData()
         self.wifi_connected = False
-        self.esp32_host = "192.168.4.1"
-        self.esp32_port = 80
+        self.esp32_host = "192.168.0.132"
+        self.esp32_port = 5000
         self.incubator_closed = False
         self.microfluidics_closed = False
         
