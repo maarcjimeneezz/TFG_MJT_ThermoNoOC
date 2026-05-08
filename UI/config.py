@@ -5,8 +5,8 @@ Modify these settings to customize the application
 
 # ESP32 Connection Settings
 ESP32_CONFIG = {
-    "host": "192.168.4.1",      # ESP32 AP IP address
-    "port": 80,                  # ESP32 server port
+    "host": "192.168.0.132",     # ESP32 AP IP address
+    "port": 5000,                # ESP32 server port
     "timeout": 2,                # Connection timeout (seconds)
 }
 
