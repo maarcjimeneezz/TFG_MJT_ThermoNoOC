@@ -8,15 +8,13 @@
 
 #include <WiFi.h>
 
-class WifiCommunication {
+class WifiCommunication
+{
 private:
-    const char* _ssid;
-    const char* _password;
-    uint16_t _port;
     WiFiServer _server;
-    WiFiClient _client;
-    unsigned long _lastConnectionAttempt;
-    const unsigned long _reconnectInterval = 5000;
+    IPAddress _local_IP;
+    IPAddress _gateway;
+    IPAddress _subnet;
 
 public:
     /**
@@ -24,23 +22,18 @@ public:
      * @param password WiFi Password
      * @param port TCP Port (default 5000)
      */
-    WifiCommunication(const char* ssid, const char* password, uint16_t port = 5000);
+    WifiCommunication(const char *ssid, const char *password, uint16_t port);
 
     // Initializes WiFi and starts TCP server
-    void begin();
-    
-    // Non-blocking maintenance of WiFi and Client connections
-    void handle();
+    void begin(IPAddress ip, IPAddress gw, IPAddress sn);
 
-    // Sends a telemetry string to the PC (adds \n automatically)
-    void sendTelemetry(String data);
+    // Main loop to handle incoming client connections and requests
+    String getRequest(WiFiClient &client);
+    String extractJsonValue(String data, String key);
+    String buildSensorJson(float t1, float h1, float t2, float h2, float uv, float co2, float f1, float f2);
 
-    // Returns a command string if available, otherwise empty string
-    String getCommand();
-
-    // Status helpers
-    bool isClientConnected();
-    String getIP();
+    // Accessor for the server instance
+    WiFiServer &server() { return _server; }
 };
 
 #endif
