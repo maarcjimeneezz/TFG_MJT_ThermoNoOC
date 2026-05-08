@@ -2,7 +2,7 @@ import socket
 import time
 
 # Remember to connect your PC to the same Wi-Fi network as the ESP32 and update the IP address below!
-ESP32_IP = "192.168.1.22" # Replace with the IP shown in your Serial Monitor
+ESP32_IP = "192.168.0.132" # Replace with the IP shown in your Serial Monitor
 PORT = 5000
 
 print(f"Attempting to connect to {ESP32_IP}...")
