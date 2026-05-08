@@ -133,7 +133,7 @@ class IncubatorUI(ctk.CTk):
             header_frame,
             text="00:00:00",
             font=("Helvetica", 18, "bold"),
-            text_color="#00ff00"
+            text_color="#6c5ce7"
         )
         self.clock_label.grid(row=0, column=1, sticky="e", padx=20)
         
