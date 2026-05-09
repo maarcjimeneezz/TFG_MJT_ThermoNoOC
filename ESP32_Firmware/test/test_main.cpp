@@ -40,12 +40,12 @@ void loop_wifi_communication();
 // Set to 1 to enable the specific test, 0 to skip it during compilation
 #define ENABLE_FIRST_PCB_TEST 0
 #define ENABLE_CONTROL_NTC_FANS_TEST 0
-#define ENABLE_ENVIRONMENTAL_SENSORS_TEST 1
+#define ENABLE_ENVIRONMENTAL_SENSORS_TEST 0
 #define ENABLE_I2C_SCANNER_TEST 0
 #define ENABLE_LED_ARRAY_TEST 0
 #define ENABLE_PUMPS_LOGIC_TEST 0
 #define ENABLE_ITO_GLASS_TEST 0
-#define ENABLE_WIFI_COMMUNICATION_TEST 0
+#define ENABLE_WIFI_COMMUNICATION_TEST 1
 
 /**
  * @brief Main Setup function.

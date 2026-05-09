@@ -3,6 +3,8 @@
  * @brief connectivity test: Blinks LED only when a PC connects to the AP.
  */
 
+// After Uploading the file to the ESP32 Board, go to file ../UI/pc_test_connection.py and execute it.
+// This file will connect the PC to the ESP32 Board, make the LED blink for 10 seconds
 #include <Arduino.h>
 #include "WifiCommunication.h"
 
