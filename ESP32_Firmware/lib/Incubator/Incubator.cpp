@@ -1,7 +1,7 @@
 #include "Incubator.h"
 
-// Constructor: Initializing SHT objects as SHT3x type
-Incubator::Incubator() : sht1(SHTSensor::SHT3X), sht2(SHTSensor::SHT3X)
+// Constructor: Initializing SHT objects using auto-detection
+Incubator::Incubator() : sht1(SHTSensor::AUTO_DETECT), sht2(SHTSensor::AUTO_DETECT)
 {
     temp1 = hum1 = temp2 = hum2 = uvIndex = 0.0f;
     co2Percent = 0.0f;
@@ -17,8 +17,10 @@ void Incubator::selectBus(uint8_t channel)
 
 void Incubator::begin()
 {
+    Wire.begin(I2C_SDA, I2C_SCL);
+
     // --- Initialize Serial2 for CO2 Sensor (9600 baud) ---
-    Serial2.begin(9600, SERIAL_8N1, PIN_CO2_RX, PIN_CO2_TX);
+    Serial2.begin(19200, SERIAL_8N1, PIN_CO2_RX, PIN_CO2_TX);
 
     // --- Initialize LED Array ---
     leds.begin();
@@ -32,22 +34,48 @@ void Incubator::begin()
     setITOPower(0);
 
     // --- Initialize I2C Sensors through the Multiplexer ---
-
     // Sensor 1 (SHT35)
+    Serial.println("Initializing SHT35 #1...");
     selectBus(MUX_CH_TEMP1);
-    sht1.init();
+    delay(50);
+    if (!sht1.init())
+    {
+        Serial.println("ERROR: SHT35 #1 init failed - sensor not detected or I2C error");
+    }
+    else
+    {
+        Serial.println("SHT35 #1 initialized successfully");
+    }
 
     // Sensor 2 (SHT35)
+    Serial.println("Initializing SHT35 #2...");
     selectBus(MUX_CH_TEMP2);
-    sht2.init();
+    delay(50);
+    if (!sht2.init())
+    {
+        Serial.println("ERROR: SHT35 #2 init failed - sensor not detected or I2C error");
+    }
+    else
+    {
+        Serial.println("SHT35 #2 initialized successfully");
+    }
 
     // UV Sensor (LTR390)
     selectBus(MUX_CH_UV);
     if (!ltr.begin())
     {
-        // Optional: Serial.println("Failed to find LTR390");
+        Serial.println("LTR390 init failed");
     }
-    ltr.setMode(LTR390_MODE_UVS); // Set to UV sensing mode
+    else
+    {
+        ltr.setMode(LTR390_MODE_UVS);
+        ltr.setGain(LTR390_GAIN_18); // high sensitivity for low UV levels
+        ltr.setResolution(LTR390_RESOLUTION_20BIT);
+        // LTR390 needs time to acquire first measurement (integration time + stabilization)
+        // With 20-bit resolution, measurement takes ~1000ms; add 500ms margin for stability
+        delay(1500);
+        Serial.println("LTR390 initialized (waiting for first data...)");
+    }
 }
 
 void Incubator::readEnvironment()
@@ -59,6 +87,12 @@ void Incubator::readEnvironment()
         temp1 = sht1.getTemperature();
         hum1 = sht1.getHumidity();
     }
+    else
+    {
+        Serial.println("ERROR: SHT35 #1 read failed - check I2C connection");
+        temp1 = 0.0f;
+        hum1 = 0.0f;
+    }
 
     // 2. Read SHT35 - Channel 2
     selectBus(MUX_CH_TEMP2);
@@ -67,29 +101,69 @@ void Incubator::readEnvironment()
         temp2 = sht2.getTemperature();
         hum2 = sht2.getHumidity();
     }
+    else
+    {
+        Serial.println("ERROR: SHT35 #2 read failed - check I2C connection");
+        temp2 = 0.0f;
+        hum2 = 0.0f;
+    }
 
     // 3. Read UV Sensor
     selectBus(MUX_CH_UV);
+    delay(50);
     if (ltr.newDataAvailable())
     {
         uvIndex = ltr.readUVS();
     }
+    else
+    {
+        Serial.printf("WARNING: LTR390 no new data available (mode=%d gain=%d res=%d)\n",
+                      ltr.getMode(), ltr.getGain(), ltr.getResolution());
+        uvIndex = 0.0f;
+    }
 
     // 4. Read CO2 Sensor via Serial2
-    // Basic logic for MH-Z19 / T6615 (sending 9-byte command)
-    uint8_t cmd[9] = {0xFF, 0x01, 0x86, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79};
-    Serial2.write(cmd, 9);
+    // Limpieza profunda del puerto antes de transmitir [cite: 34]
+    Serial2.flush();
+    while (Serial2.available() > 0)
+        Serial2.read();
 
-    uint8_t response[9];
-    if (Serial2.available() > 0)
+    // Comando exacto según página 8 del manual: FF FE 02 02 03 [cite: 150]
+    uint8_t cmd[] = {0xFF, 0xFE, 0x02, 0x02, 0x03};
+    Serial2.write(cmd, 5);
+
+    // El manual dice que el ciclo DSP puede tardar segundos, pero la
+    // respuesta UART debe ser rápida tras el comando [cite: 16, 19]
+    unsigned long timeout = millis() + 500;
+    while (Serial2.available() < 5 && millis() < timeout)
     {
-        Serial2.readBytes(response, 9);
-        if (response[0] == 0xFF && response[1] == 0x86)
+        delay(10);
+    }
+
+    if (Serial2.available() >= 5)
+    {
+        uint8_t resp[5];
+        Serial2.readBytes(resp, 5);
+
+        // Validar cabecera de respuesta: FF FA (To Master) [cite: 78, 83]
+        if (resp[0] == 0xFF && resp[1] == 0xFA)
         {
-            uint32_t co2PPM = (response[2] << 8) + response[3];
-            // Convert PPM to percentage: PPM / 10000 * 100 = PPM / 100
-            co2Percent = (float)co2PPM / 10000.0f * 100.0f;
+            // El manual indica que el PPM viene en los bytes 3 y 4 (MSB y LSB) [cite: 116, 150]
+            uint16_t co2Raw = (resp[3] << 8) | resp[4];
+
+            // IMPORTANTE: Algunos modelos devuelven el valor para multiplicar por 16 [cite: 116, 150]
+            // Si ves un valor de ~25 en aire normal, cámbialo a (co2Raw * 16)
+            co2Percent = (float)co2Raw / 10000.0f;
         }
+        else
+        {
+            Serial.printf("Error de Sincronía: %02X %02X\n", resp[0], resp[1]);
+        }
+    }
+    else
+    {
+        // El manual sugiere re-enviar si no hay respuesta [cite: 12, 34]
+        Serial.println("CO2 Timeout: Sensor no respondió al comando 0x02 0x03");
     }
 }
 

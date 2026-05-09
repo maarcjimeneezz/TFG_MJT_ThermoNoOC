@@ -1,71 +1,69 @@
 /**
  * @file test_wifi_communication.cpp
- * @brief Simple test to verify TCP connection and blink LED on connection.
+ * @brief connectivity test: Blinks LED only when a PC connects to the AP.
  */
 
 #include <Arduino.h>
 #include "WifiCommunication.h"
 
-// Configuration
-const char *ssid = "planta2-historic";
-const char *password = "planta2historic";
+// --- AP Configuration ---
+const char *ssid = "ThermoNoOC";
+const char *password = "thermonooc";
 const int port = 5000;
-const int LED_PIN = 2;
+const int LED_PIN = 2; // Internal LED (GPIO 2 on most ESP32)
 
-// Objects
+// --- Network IP Configuration ---
+IPAddress local_IP(192, 168, 0, 132);
+IPAddress gateway(192, 168, 0, 1);
+IPAddress subnet(255, 255, 255, 0);
+
+// Initialize the communication object
 WifiCommunication wifi(ssid, password, port);
 
 void setup_wifi_communication()
 {
     Serial.begin(115200);
     pinMode(LED_PIN, OUTPUT);
-    digitalWrite(LED_PIN, LOW); // Start with LED off
+    digitalWrite(LED_PIN, LOW); // LED off by default
 
-    // Initialize WiFi
-    wifi.begin();
+    // Initialize WiFi Access Point
+    wifi.begin(local_IP, gateway, subnet);
 
-    Serial.println("\n--- WiFi Test Initialized ---");
-    Serial.print("Waiting for PC to connect on IP: ");
-    Serial.println(WiFi.localIP());
+    Serial.println("\n--- WIFI AP CONNECTIVITY TEST ---");
+    Serial.print("SSID: ");
+    Serial.println(ssid);
+    Serial.print("IP:   ");
+    Serial.println(local_IP);
+    Serial.println("Waiting for PC connection...");
 }
 
 void loop_wifi_communication()
 {
-    // Keep the WiFi and TCP server running
-    wifi.handle();
+    // Check if a client (PC) is connecting to the server
+    WiFiClient client = wifi.server().available();
 
-    if (wifi.isClientConnected())
+    if (client)
     {
-        // 1. BLINK LED: Connection is active
-        digitalWrite(LED_PIN, HIGH);
-        delay(100);
-        digitalWrite(LED_PIN, LOW);
-        delay(100);
+        Serial.println("[!] PC Connected! Blinking LED...");
 
-        // 2. SEND TEST DATA: Send a heartbeat to the PC every second
-        static unsigned long lastMsg = 0;
-        if (millis() - lastMsg > 1000)
+        // While the PC is connected, blink the LED
+        while (client.connected())
         {
-            lastMsg = millis();
-            wifi.sendTelemetry("STATUS:CONNECTED,Uptime:" + String(millis() / 1000) + "s");
-            Serial.println("Sent heartbeat to PC.");
-        }
-
-        // 3. LISTEN FOR COMMANDS: If PC sends "OFF", stop the test
-        String cmd = wifi.getCommand();
-        if (cmd == "OFF")
-        {
-            Serial.println("PC requested stop. LED will stay ON.");
             digitalWrite(LED_PIN, HIGH);
-            while (true)
+            delay(100);
+            digitalWrite(LED_PIN, LOW);
+            delay(100);
+
+            // Check if there's any data just to clear the buffer
+            while (client.available())
             {
-                delay(1000);
-            } // Stop here
+                client.read();
+            }
         }
-    }
-    else
-    {
-        // If not connected, keep LED off or blink very slowly
+
+        // When PC disconnects
+        client.stop();
         digitalWrite(LED_PIN, LOW);
+        Serial.println("[!] PC Disconnected. LED Off.");
     }
 }
