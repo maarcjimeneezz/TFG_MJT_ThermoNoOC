@@ -1,7 +1,7 @@
 # ThermoNoOC: ESP32 Firmware for Intelligent Incubation Control
 
 **Version**: 1.0  
-**Project**: TFG - Thermo-Microfluidic Incubator with Nocodazole Overflow Control  
+**Project**: TFG - Thermo-Microfluidic Incubator with Flow Control  
 **Platform**: ESP32 (Arduino Framework)  
 **Build System**: PlatformIO
 
@@ -18,9 +18,7 @@ This repository contains the complete, production-ready firmware for an ESP32-ba
 - **UV Lighting**: 4 independent LED arrays with programmable intensity
 - **Microfluidic Pumps**: 4 parallel micropumps with 2 flow rate sensors
 - **Thermal Management**: PCB temperature monitoring with automatic fan speed control
-- **WiFi Interface**: Real-time bidirectional communication with UI (Python/LabVIEW)
-
----
+- **WiFi Interface**: Real-time bidirectional communication with UI (Python)
 
 ---
 
