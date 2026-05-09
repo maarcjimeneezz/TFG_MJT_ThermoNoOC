@@ -227,7 +227,7 @@ All commands are JSON-formatted and transmitted over TCP port 5000.
 }
 ```
 
-**Request (Pulsed Mode):**
+**Request (Pulsed/Intermittent Mode):**
 
 ```json
 {
@@ -245,7 +245,7 @@ All commands are JSON-formatted and transmitted over TCP port 5000.
 
 - `pump`: 1-2 (2 independent circuits, each controlling fluid + air pumps)
 - `flow`: Flow rate in µL/min (range: 0-2000)
-- `mode`: `"continuous"` or `"pulsed"`
+- `mode`: `"continuous"` or `"pulsed"` (Note: UI displays as "Intermittent")
 - `feeding_time`: Duration to pump (seconds, pulsed mode only)
 - `pause_time`: Duration to pause (seconds, pulsed mode only)
 - `cycles`: Number of feed/pause cycles (pulsed mode only)

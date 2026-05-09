@@ -851,12 +851,14 @@ class UVSheet:
         
     def update_uv_intensity(self, group_id, value):
         """Update UV group intensity"""
-        intensity = int(float(value))
-        self.uv_labels[group_id].configure(text=f"{intensity}%")
+        intensity_percent = int(float(value))
+        # Convert from 0-100 percentage to 0-255 PWM value
+        intensity_pwm = int(intensity_percent * 255 / 100)
+        self.uv_labels[group_id].configure(text=f"{intensity_percent}%")
         self.main_app.send_command_to_esp32({
             'command': 'uv_intensity',
             'group': group_id,
-            'intensity': intensity
+            'intensity': intensity_pwm
         })
 
 
@@ -955,7 +957,7 @@ class MicrofluidicsSheet:
             intermittent_btn = ctk.CTkButton(
                 mode_frame,
                 text="Intermittent",
-                command=lambda idx=pump_id: self.set_pump_mode(idx, 'intermittent'),
+                command=lambda idx=pump_id: self.set_pump_mode(idx, 'pulsed'),
                 width=80,
                 fg_color="#1f1f1f"
             )
@@ -1052,10 +1054,10 @@ class MicrofluidicsSheet:
     def set_pump_mode(self, pump_id, mode):
         self.pump_modes[pump_id]['mode'] = mode
         self.pump_modes[pump_id]['continuous_btn'].configure(fg_color="#229922" if mode == 'continuous' else '#1f1f1f')
-        self.pump_modes[pump_id]['intermittent_btn'].configure(fg_color="#229922" if mode == 'intermittent' else '#1f1f1f')
+        self.pump_modes[pump_id]['intermittent_btn'].configure(fg_color="#229922" if mode == 'pulsed' else '#1f1f1f')
         
         # Enable/disable timing entries based on mode
-        state = "normal" if mode == 'intermittent' else "disabled"
+        state = "normal" if mode == 'pulsed' else "disabled"
         self.pump_feeding_entries[pump_id].configure(state=state)
         self.pump_pause_entries[pump_id].configure(state=state)
         self.pump_cycles_entries[pump_id].configure(state=state)

@@ -55,7 +55,7 @@ Professional control interface for the ThermoNoOC incubator system with real-tim
 - **One-Click Save**: Simple button to save data anytime during operation
 
 ### 8. **ESP32 Connectivity** 🌐
-- **WiFi Connection**: Direct TCP connection to ESP32 (default: 192.168.4.1:80)
+- **WiFi Connection**: Direct TCP connection to ESP32 (192.168.0.132:5000)
 - **Connection Status**: Visual indicator (green = connected, red = disconnected)
 - **Command Protocol**: JSON-based command system for reliable communication
 
@@ -80,6 +80,12 @@ pip install -r requirements.txt
 ```bash
 python User_interface.py
 ```
+
+### WiFi Connection Details
+- **SSID**: `ThermoNoOC`
+- **Password**: `thermonooc`
+- **IP Address**: 192.168.0.132
+- **Port**: 5000
 
 ### Initial Setup
 1. **System Gating**: Click "Incubator Closed" and/or "Microfluidics Closed" to activate sensors
@@ -140,9 +146,10 @@ python User_interface.py
 {
   "command": "uv_intensity",
   "group": 1,
-  "intensity": 75
+  "intensity": 191
 }
 ```
+*Note: Intensity range is 0-255 (0% to 100%), converted from UI slider 0-100%*
 
 ### Microfluidics Control
 ```json
@@ -159,12 +166,13 @@ python User_interface.py
   "command": "set_pump_flow_and_mode",
   "pump": 1,
   "flow": 1000,
-  "mode": "intermittent",
+  "mode": "pulsed",
   "feeding_time": 30,
   "pause_time": 10,
   "cycles": 5
 }
 ```
+*Note: "pulsed" mode is displayed as "Intermittent" in the UI*
 
 ## Data Storage & Export
 
