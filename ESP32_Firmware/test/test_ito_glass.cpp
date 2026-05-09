@@ -14,7 +14,7 @@ const int itoCh = 5;      // PWM Channel 5
 
 // Constants for Power Estimation
 const float V_SOURCE = 24.0; // Power supply voltage
-const float R_APPROX = 15.0; // Measured resistance of your ITO
+const float R_APPROX = 70.0; // Measured resistance of your ITO
 
 /**
  * Initializes the PWM hardware for the ITO Control pin.
