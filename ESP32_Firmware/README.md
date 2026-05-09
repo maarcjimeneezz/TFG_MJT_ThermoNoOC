@@ -114,9 +114,10 @@ The main firmware implements a **multitasking control loop** with event-driven a
 
 #### Pump Flow Control
 
+- **Flow Rate Range**: 0-2000 µL/min (limited by SLF3S-0600F flow sensor)
 - **Continuous Mode**: Pump runs at constant frequency
 - **Pulsed Mode**: Pump cycles with configurable feeding/pausing times
-- **Frequency Mapping**: `freq_Hz = flow_mL/min × 100`
+- **Frequency Mapping**: `freq_Hz = flow_µL/min / 10` (approximate conversion)
 
 ---
 
@@ -156,9 +157,9 @@ All commands are JSON-formatted and transmitted over TCP port 5000.
   "temp2": 37.18,
   "hum2": 64.9,
   "uv": 125.6,
-  "co2": 412,
-  "flow1": 0.85,
-  "flow2": 0.92
+  "co2": 0.41,
+  "flow1": 850,
+  "flow2": 920
 }
 ```
 
@@ -217,7 +218,7 @@ All commands are JSON-formatted and transmitted over TCP port 5000.
 {
   "command": "set_pump_flow_and_mode",
   "pump": "1",
-  "flow": "1.5",
+  "flow": "1500",
   "mode": "continuous",
   "feeding_time": "0",
   "pause_time": "0",
@@ -231,7 +232,7 @@ All commands are JSON-formatted and transmitted over TCP port 5000.
 {
   "command": "set_pump_flow_and_mode",
   "pump": "1",
-  "flow": "2.0",
+  "flow": "2000",
   "mode": "pulsed",
   "feeding_time": "5.0",
   "pause_time": "10.0",
@@ -242,7 +243,7 @@ All commands are JSON-formatted and transmitted over TCP port 5000.
 **Parameters:**
 
 - `pump`: 1-2 (2 independent pumps)
-- `flow`: Flow rate in mL/min
+- `flow`: Flow rate in µL/min (range: 0-2000)
 - `mode`: `"continuous"` or `"pulsed"`
 - `feeding_time`: Duration to pump (seconds, pulsed mode only)
 - `pause_time`: Duration to pause (seconds, pulsed mode only)
@@ -269,8 +270,8 @@ All commands are JSON-formatted and transmitted over TCP port 5000.
   "status": "ok",
   "pcb_temp": 32.5,
   "target_temp": 37.0,
-  "pump1_flow": 0.85,
-  "pump2_flow": 0.92
+  "pump1_flow": 850,
+  "pump2_flow": 920
 }
 ```
 
@@ -316,6 +317,11 @@ All commands are JSON-formatted and transmitted over TCP port 5000.
 | LTR390 (UV)           | 1        | I2C      | 0x53    | 0x70:CH4       |
 | T6615 (CO₂)           | 1        | UART     | -       | Serial2 (9600) |
 
+#### CO₂ Sensor (T6615) Output
+
+- **Output Format**: CO₂ percentage (0-20%)
+- **Conversion**: PPM is internally converted to percentage (PPM ÷ 10000 × 100)
+
 ### 3. UV LED Array (`LED_Array` class)
 
 - **Channels**: 4 independent PWM
@@ -329,16 +335,18 @@ All commands are JSON-formatted and transmitted over TCP port 5000.
 
 - **I2C Address**: 0x59
 - **Multiplexer**: 0x71 (channels 2-5 for pumps, 6-7 for flow sensors)
-- **Voltage Range**: 0-150 Vpp (255 steps)
-- **Frequency Range**: 0-800 Hz
+- **Voltage Range**: 0-150 Vpp (255 PWM steps)
+- **Frequency Range**: 8-2000 Hz
 - **Frequency Resolution**: 7.8125 Hz/step
 - **Formula**: `freqReg = frequency / 7.8125`
+- **Note**: Maximum frequency is limited to 2000 Hz by hardware specifications
 
 **Flow Sensors (SLF3S-0600F):**
 
 - **I2C Address**: 0x08
-- **Scale Factor**: 500 counts per mL/min
-- **Output**: 16-bit signed integer
+- **Scale Factor**: 500 counts per mL/min (converted to µL/min: 0.5 counts per µL/min)
+- **Output Range**: 0-2000 µL/min (0-2 mL/min)
+- **Output Format**: 16-bit signed integer
 
 ### 5. WiFi Interface (`WifiCommunication` class)
 
@@ -470,7 +478,7 @@ Port: 5000
 
 Target Temperature set to: 37.00 °C
 UV Group 1: ON
-Pump 1 config: flow=1.50 mL/min, mode=continuous
+Pump 1 config: flow=1500.00 µL/min, mode=continuous
 ...
 ```
 
@@ -575,9 +583,9 @@ void allOff();                   // Turn off all LEDs
 
 ```cpp
 void begin();                    // Initialize pumps & sensors
-float getFlowRate(int sensorNum); // Read flow rate (mL/min)
-void setPumpVoltage(int pumpNum, uint8_t voltage); // Amplitude
-void setPumpFrequency(int pumpNum, uint16_t frequency); // Frequency
+float getFlowRate(int sensorNum); // Read flow rate (µL/min, 0-2000)
+void setPumpVoltage(int pumpNum, uint8_t voltage); // Amplitude (0-150 Vpp)
+void setPumpFrequency(int pumpNum, uint16_t frequency); // Frequency (8-2000 Hz)
 ```
 
 #### `WifiCommunication` - WiFi Interface

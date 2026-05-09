@@ -35,7 +35,7 @@ void loop_environmental_sensors()
     Serial.printf("UV Index: %.2f\n", incubator.uvIndex);
 
     // CO2 Sensor
-    Serial.printf("CO2 Concentration: %u PPM\n", incubator.co2PPM);
+    Serial.printf("CO2 Concentration: %.2f %%\n", incubator.co2Percent);
 
     Serial.println("--------------------------");
     delay(3000); // Wait 3 seconds for next update

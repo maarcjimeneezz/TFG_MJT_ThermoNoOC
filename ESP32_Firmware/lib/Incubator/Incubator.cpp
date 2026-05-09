@@ -4,7 +4,7 @@
 Incubator::Incubator() : sht1(SHTSensor::SHT3X), sht2(SHTSensor::SHT3X)
 {
     temp1 = hum1 = temp2 = hum2 = uvIndex = 0.0f;
-    co2PPM = 0;
+    co2Percent = 0.0f;
 }
 
 void Incubator::selectBus(uint8_t channel)
@@ -76,7 +76,7 @@ void Incubator::readEnvironment()
     }
 
     // 4. Read CO2 Sensor via Serial2
-    // Basic logic for MH-Z19 (sending 9-byte command)
+    // Basic logic for MH-Z19 / T6615 (sending 9-byte command)
     uint8_t cmd[9] = {0xFF, 0x01, 0x86, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79};
     Serial2.write(cmd, 9);
 
@@ -86,7 +86,9 @@ void Incubator::readEnvironment()
         Serial2.readBytes(response, 9);
         if (response[0] == 0xFF && response[1] == 0x86)
         {
-            co2PPM = (response[2] << 8) + response[3];
+            uint32_t co2PPM = (response[2] << 8) + response[3];
+            // Convert PPM to percentage: PPM / 10000 * 100 = PPM / 100
+            co2Percent = (float)co2PPM / 10000.0f * 100.0f;
         }
     }
 }
@@ -129,13 +131,13 @@ void Incubator::updateActuators()
     {
         if (pumpConfig[pumpIdx].flow > 0)
         {
-            // Convert flow rate to pump voltage and frequency
-            // Simple mapping: 0.5 mL/min -> 50Hz, 2.0 mL/min -> 200Hz
-            uint16_t freq = (uint16_t)(pumpConfig[pumpIdx].flow * 100);
-            freq = constrain(freq, 50, 300);
+            // Convert flow rate (µL/min) to pump frequency (Hz)
+            // Mapping: 0-2000 µL/min -> 0-800 Hz (freq = flow / 2.5)
+            uint16_t freq = (uint16_t)(pumpConfig[pumpIdx].flow / 2.5);
+            freq = constrain(freq, 8, 800); // Constrain to valid frequency range
 
             fluidics.setPumpFrequency(pumpIdx + 1, freq);
-            fluidics.setPumpVoltage(pumpIdx + 1, 200); // Default amplitude
+            fluidics.setPumpVoltage(pumpIdx + 1, 200); // Default amplitude (0-150 Vpp)
 
             // Handle pulsed mode
             if (pumpConfig[pumpIdx].mode == "pulsed" && pumpConfig[pumpIdx].cycles > 0)

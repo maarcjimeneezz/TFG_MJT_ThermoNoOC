@@ -8,6 +8,13 @@
 /**
  * @class Microfluidics
  * @brief Manages 4 Bartels mp-Lowdrivers and 2 Sensirion SLF3S flow sensors via I2C Mux 0x71.
+ * 
+ * mp-Lowdriver Specifications:
+ * - Voltage Range: 0-150 Vpp
+ * - Frequency Range: 8-2000 Hz
+ * 
+ * Flow Sensor Specifications (SLF3S-0600F):
+ * - Output Range: 0-2000 µL/min
  */
 class Microfluidics
 {
@@ -39,7 +46,7 @@ public:
     /**
      * Reads flow rate from a specific sensor.
      * @param sensorNum Sensor index (1 or 2).
-     * @return Flow rate in ml/min.
+     * @return Flow rate in µL/min (range: 0-2000).
      */
     float getFlowRate(int sensorNum);
 

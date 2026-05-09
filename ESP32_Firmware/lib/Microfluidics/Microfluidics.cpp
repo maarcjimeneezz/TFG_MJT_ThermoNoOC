@@ -71,8 +71,9 @@ float Microfluidics::getFlowRate(int sensorNum)
     if (Wire.available() >= 2)
     {
         int16_t rawFlow = (Wire.read() << 8) | Wire.read();
-        Wire.read();                    // Discard CRC
-        return (float)rawFlow / 500.0f; // SLF3S-0600F Scale factor
+        Wire.read();                      // Discard CRC
+        float flowMlMin = (float)rawFlow / 500.0f; // SLF3S-0600F Scale factor (ml/min)
+        return flowMlMin * 1000.0f;        // Convert to µL/min
     }
     return 0.0f;
 }

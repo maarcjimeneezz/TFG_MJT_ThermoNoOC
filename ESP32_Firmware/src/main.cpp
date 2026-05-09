@@ -33,7 +33,7 @@ void processCommand(WiFiClient client, String request)
   if (command == "get_sensor_data")
   {
     // Send actual real-time data read from the sensors
-    String response = wifi.buildSensorJson(inc.temp1, inc.hum1, inc.temp2, inc.hum2, inc.uvIndex, (float)inc.co2PPM, inc.flow1, inc.flow2);
+    String response = wifi.buildSensorJson(inc.temp1, inc.hum1, inc.temp2, inc.hum2, inc.uvIndex, inc.co2Percent, inc.flow1, inc.flow2);
     client.print(response);
   }
   else if (command == "set_temp")
@@ -88,7 +88,7 @@ void processCommand(WiFiClient client, String request)
       inc.pumpConfig[p].pauseTime = wifi.extractJsonValue(request, "pause_time").toFloat();
       inc.pumpConfig[p].cycles = wifi.extractJsonValue(request, "cycles").toInt();
 
-      Serial.printf("Pump %d config: flow=%.2f mL/min, mode=%s\n", p + 1, inc.pumpConfig[p].flow, inc.pumpConfig[p].mode.c_str());
+      Serial.printf("Pump %d config: flow=%.2f µL/min, mode=%s\n", p + 1, inc.pumpConfig[p].flow, inc.pumpConfig[p].mode.c_str());
       client.print("{\"status\":\"ok\",\"message\":\"Pump configured\"}\n");
     }
     else
@@ -212,7 +212,7 @@ void loop()
         inc.temp1, inc.hum1,
         inc.temp2, inc.hum2,
         inc.uvIndex,
-        (float)inc.co2PPM,
+        inc.co2Percent,
         inc.flow1, inc.flow2);
 
     // Send to all connected clients

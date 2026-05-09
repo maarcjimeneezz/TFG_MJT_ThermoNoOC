@@ -40,8 +40,8 @@ public:
     float temp1, hum1;  // Data from SHT35 #1
     float temp2, hum2;  // Data from SHT35 #2
     float uvIndex;      // Data from LTR390
-    uint32_t co2PPM;    // Data from T6615 (CO2)
-    float flow1, flow2; // Data from SLF3S-0600F (Flow Sensors)
+    float co2Percent;   // Data from T6615 (CO₂ in percentage, 0-20%)
+    float flow1, flow2; // Data from SLF3S-0600F (Flow Sensors in µL/min)
 
     // --- Target Environmental Parameters (UI Commands) ---
     float targetTemperature = 37.0;                   // Desired temperature for the incubator
@@ -50,7 +50,7 @@ public:
 
     struct PumpConfig
     {
-        float flow = 0.0;           // Desired flow rate in mL/min
+        float flow = 0.0;           // Desired flow rate in µL/min (range: 0-2000)
         String mode = "continuous"; // "continuous" or "pulsed"
         float feedingTime = 0.0;    // For pulsed mode: time to feed in seconds
         float pauseTime = 0.0;      // For pulsed mode: time to pause in seconds
