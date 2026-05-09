@@ -16,7 +16,7 @@ This repository contains the complete, production-ready firmware for an ESP32-ba
 - **Temperature Control**: Proportional heating via ITO glass heater (37°C setpoint)
 - **Environmental Monitoring**: Dual temperature/humidity sensors + UV index + CO₂ tracking
 - **UV Lighting**: 4 independent LED arrays with programmable intensity
-- **Microfluidic Pumps**: 4 parallel micropumps with 2 flow rate sensors
+- **Microfluidic Pumps**: 4 parallel micropumps (2 circuits) with 2 flow rate sensors
 - **Thermal Management**: PCB temperature monitoring with automatic fan speed control
 - **WiFi Interface**: Real-time bidirectional communication with UI (Python)
 
@@ -113,9 +113,12 @@ The main firmware implements a **multitasking control loop** with event-driven a
 #### Pump Flow Control
 
 - **Flow Rate Range**: 0-2000 µL/min (limited by SLF3S-0600F flow sensor)
-- **Continuous Mode**: Pump runs at constant frequency
-- **Pulsed Mode**: Pump cycles with configurable feeding/pausing times
-- **Frequency Mapping**: `freq_Hz = flow_µL/min / 10` (approximate conversion)
+- **Circuit Configuration**: 2 independent circuits, each with fluid pump + air pump for bubble removal
+  - Circuit 1: Pumps 1 (fluid) + 3 (air)
+  - Circuit 2: Pumps 2 (fluid) + 4 (air)
+- **Continuous Mode**: Pumps run at constant frequency
+- **Pulsed Mode**: Pumps cycle with configurable feeding/pausing times
+- **Frequency Mapping**: `freq_Hz = flow_µL/min / 2.5` (approximate conversion)
 
 ---
 
@@ -240,7 +243,7 @@ All commands are JSON-formatted and transmitted over TCP port 5000.
 
 **Parameters:**
 
-- `pump`: 1-2 (2 independent pumps)
+- `pump`: 1-2 (2 independent circuits, each controlling fluid + air pumps)
 - `flow`: Flow rate in µL/min (range: 0-2000)
 - `mode`: `"continuous"` or `"pulsed"`
 - `feeding_time`: Duration to pump (seconds, pulsed mode only)
@@ -328,6 +331,12 @@ All commands are JSON-formatted and transmitted over TCP port 5000.
 - **GPIO Pins**: 18, 19, 25, 26
 
 ### 4. Microfluidics Control (`Microfluidics` class)
+
+**Pump Organization:**
+
+- **Circuit 1**: Pumps 1 (fluid) + 3 (air for bubble removal)
+- **Circuit 2**: Pumps 2 (fluid) + 4 (air for bubble removal)
+- **Control**: Circuits are controlled as pairs - when a fluid pump is active, its corresponding air pump activates automatically
 
 **mp-Lowdriver Specifications:**
 

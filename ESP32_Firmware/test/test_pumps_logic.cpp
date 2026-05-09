@@ -1,9 +1,9 @@
 /**
- * @file test_pumps_parallel.cpp
+ * @file test_pumps_logic.cpp
  * @brief Stress test: Runs all 4 pumps simultaneously and monitors flow.
- * * Logic:
- * - Pumps 1 & 3: Liquid (80 Hz)
- * - Pumps 2 & 4: Air/Bubble Trap (300 Hz)
+ * Logic:
+ * - Circuit 1: Pumps 1 (fluid) & 3 (air) at 80 Hz
+ * - Circuit 2: Pumps 2 (fluid) & 4 (air) at 300 Hz
  */
 
 #include <Arduino.h>

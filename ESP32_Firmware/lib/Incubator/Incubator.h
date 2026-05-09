@@ -55,7 +55,7 @@ public:
         float feedingTime = 0.0;    // For pulsed mode: time to feed in seconds
         float pauseTime = 0.0;      // For pulsed mode: time to pause in seconds
         int cycles = 0;             // For pulsed mode: number of feed/pause cycles
-    } pumpConfig[2];                // Configuration for 2 pumps
+    } pumpConfig[2];                // Configuration for 2 circuits (each with fluid and air pumps)
 
     Incubator();
 

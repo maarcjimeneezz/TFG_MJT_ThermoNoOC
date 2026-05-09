@@ -9,6 +9,10 @@
  * @class Microfluidics
  * @brief Manages 4 Bartels mp-Lowdrivers and 2 Sensirion SLF3S flow sensors via I2C Mux 0x71.
  *
+ * Pump Organization:
+ * - Circuit 1: Pumps 1 (fluid) + 3 (air for bubble removal)
+ * - Circuit 2: Pumps 2 (fluid) + 4 (air for bubble removal)
+ *
  * mp-Lowdriver Specifications:
  * - Voltage Range: 0-150 Vpp
  * - Frequency Range: 8-2000 Hz

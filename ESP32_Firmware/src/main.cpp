@@ -88,7 +88,7 @@ void processCommand(WiFiClient client, String request)
       inc.pumpConfig[p].pauseTime = wifi.extractJsonValue(request, "pause_time").toFloat();
       inc.pumpConfig[p].cycles = wifi.extractJsonValue(request, "cycles").toInt();
 
-      Serial.printf("Pump %d config: flow=%.2f µL/min, mode=%s\n", p + 1, inc.pumpConfig[p].flow, inc.pumpConfig[p].mode.c_str());
+      Serial.printf("Circuit %d config: flow=%.2f µL/min, mode=%s\n", p + 1, inc.pumpConfig[p].flow, inc.pumpConfig[p].mode.c_str());
       client.print("{\"status\":\"ok\",\"message\":\"Pump configured\"}\n");
     }
     else

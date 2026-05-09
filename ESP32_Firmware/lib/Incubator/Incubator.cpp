@@ -127,46 +127,55 @@ void Incubator::updateActuators()
 
     // --- 3. Pump Flow Control ---
     // Update pump configurations based on mode (continuous or pulsed)
-    for (int pumpIdx = 0; pumpIdx < 2; pumpIdx++)
+    // Each circuit has a fluid pump and an air pump that work together
+    for (int circuitIdx = 0; circuitIdx < 2; circuitIdx++)
     {
-        if (pumpConfig[pumpIdx].flow > 0)
+        int fluidPump = circuitIdx + 1; // Pumps 1 and 2 (fluid)
+        int airPump = circuitIdx + 3;   // Pumps 3 and 4 (air for bubble removal)
+
+        if (pumpConfig[circuitIdx].flow > 0)
         {
             // Convert flow rate (µL/min) to pump frequency (Hz)
             // Mapping: 0-2000 µL/min -> 0-800 Hz (freq = flow / 2.5)
-            uint16_t freq = (uint16_t)(pumpConfig[pumpIdx].flow / 2.5);
+            uint16_t freq = (uint16_t)(pumpConfig[circuitIdx].flow / 2.5);
             freq = constrain(freq, 8, 800); // Constrain to valid frequency range
 
-            fluidics.setPumpFrequency(pumpIdx + 1, freq);
-            fluidics.setPumpVoltage(pumpIdx + 1, 200); // Default amplitude (0-150 Vpp)
+            // Set both fluid and air pumps to the same frequency and voltage
+            fluidics.setPumpFrequency(fluidPump, freq);
+            fluidics.setPumpVoltage(fluidPump, 200); // Default amplitude (0-150 Vpp)
+            fluidics.setPumpFrequency(airPump, freq);
+            fluidics.setPumpVoltage(airPump, 200); // Same amplitude for air pump
 
             // Handle pulsed mode
-            if (pumpConfig[pumpIdx].mode == "pulsed" && pumpConfig[pumpIdx].cycles > 0)
+            if (pumpConfig[circuitIdx].mode == "pulsed" && pumpConfig[circuitIdx].cycles > 0)
             {
                 static unsigned long lastPulseTime[2] = {0, 0};
                 static int pulseCount[2] = {0, 0};
                 unsigned long currentTime = millis();
 
-                float cyclePeriod = (pumpConfig[pumpIdx].feedingTime + pumpConfig[pumpIdx].pauseTime) * 1000; // Convert to ms
-                float pulsePeriod = currentTime - lastPulseTime[pumpIdx];
+                float cyclePeriod = (pumpConfig[circuitIdx].feedingTime + pumpConfig[circuitIdx].pauseTime) * 1000; // Convert to ms
+                float pulsePeriod = currentTime - lastPulseTime[circuitIdx];
 
                 if (pulsePeriod >= cyclePeriod)
                 {
-                    pulseCount[pumpIdx]++;
-                    lastPulseTime[pumpIdx] = currentTime;
+                    pulseCount[circuitIdx]++;
+                    lastPulseTime[circuitIdx] = currentTime;
                 }
 
-                // Stop if cycles are complete
-                if (pulseCount[pumpIdx] >= pumpConfig[pumpIdx].cycles)
+                // Stop both pumps in the circuit if cycles are complete
+                if (pulseCount[circuitIdx] >= pumpConfig[circuitIdx].cycles)
                 {
-                    fluidics.setPumpVoltage(pumpIdx + 1, 0);
-                    pulseCount[pumpIdx] = 0;
+                    fluidics.setPumpVoltage(fluidPump, 0);
+                    fluidics.setPumpVoltage(airPump, 0);
+                    pulseCount[circuitIdx] = 0;
                 }
             }
         }
         else
         {
-            // Pump off
-            fluidics.setPumpVoltage(pumpIdx + 1, 0);
+            // Turn off both pumps in the circuit
+            fluidics.setPumpVoltage(fluidPump, 0);
+            fluidics.setPumpVoltage(airPump, 0);
         }
     }
 
