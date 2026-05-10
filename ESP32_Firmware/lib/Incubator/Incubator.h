@@ -39,7 +39,8 @@ public:
     // --- Public Environmental Data (Readings) ---
     float temp1, hum1;  // Data from SHT35 #1
     float temp2, hum2;  // Data from SHT35 #2
-    float uvIndex;      // Data from LTR390
+    float uvIndex;      // Data from LTR390 (0 - 11+)
+    float uvIrradiance; // Data from LTR390 (in W/m²)
     float co2Percent;   // Data from T6615 (CO₂ in percentage, 0-20%)
     float flow1, flow2; // Data from SLF3S-0600F (Flow Sensors in µL/min)
 

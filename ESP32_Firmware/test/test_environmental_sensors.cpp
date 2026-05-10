@@ -37,6 +37,7 @@ void loop_environmental_sensors()
 
     // UV Sensor
     Serial.printf("UV Index: %.2f\n", incubator.uvIndex);
+    Serial.printf("UV Irradiance: %.4f W/m²\n", incubator.uvIrradiance);
 
     // CO2 Sensor
     Serial.printf("CO2 Concentration: %.4f %%\n", incubator.co2Percent);

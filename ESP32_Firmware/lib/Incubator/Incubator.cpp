@@ -113,13 +113,23 @@ void Incubator::readEnvironment()
     delay(50);
     if (ltr.newDataAvailable())
     {
-        uvIndex = ltr.readUVS();
+        // Leer el valor en Raw Counts
+        uint32_t rawUV = ltr.readUVS();
+
+        // Convertir a UV Index
+        // Fórmula: UVI = Raw Counts / Factor de Sensibilidad * WFAC
+        // Para Gain=18x y Res=20-bit, el factor es 2300.0
+        uvIndex = (float)rawUV / 2300.0f;
+
+        // Convertir a Irradiancia (W/m²)
+        uvIrradiance = uvIndex * 0.025f;
     }
     else
     {
         Serial.printf("WARNING: LTR390 no new data available (mode=%d gain=%d res=%d)\n",
                       ltr.getMode(), ltr.getGain(), ltr.getResolution());
         uvIndex = 0.0f;
+        uvIrradiance = 0.0f;
     }
 
     // 4. Read CO2 Sensor via Serial2
