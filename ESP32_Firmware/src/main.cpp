@@ -19,11 +19,11 @@ unsigned long lastSensorRead = 0;
 unsigned long lastTelemetrySend = 0;
 unsigned long lastClientCheck = 0;
 
-const unsigned long SENSOR_READ_INTERVAL = 100;  // Read sensors every 100ms
+const unsigned long SENSOR_READ_INTERVAL = 1000; // Read sensors every 1000ms
 const unsigned long TELEMETRY_INTERVAL = 500;    // Send telemetry every 500ms
 const unsigned long CLIENT_CHECK_INTERVAL = 100; // Check for client requests every 100ms
 
-void processCommand(WiFiClient client, String request)
+void processCommand(WiFiClient &client, String request)
 {
   // Extract the main command from JSON
   String command = wifi.extractJsonValue(request, "command");
@@ -34,6 +34,8 @@ void processCommand(WiFiClient client, String request)
   {
     // Send actual real-time data read from the sensors
     String response = wifi.buildSensorJson(inc.temp1, inc.hum1, inc.temp2, inc.hum2, inc.uvIndex, inc.co2Percent, inc.flow1, inc.flow2);
+    response += "\n"; // Ensure newline for client parsing
+    Serial.printf("Sending sensor data: %s", response.c_str());
     client.print(response);
   }
   else if (command == "set_temp")
@@ -170,60 +172,22 @@ void loop()
   if (now - lastSensorRead >= SENSOR_READ_INTERVAL)
   {
     lastSensorRead = now;
-
-    // Read environmental sensors
     inc.readEnvironment();
+    inc.updateActuators();
 
     // Read PCB temperature for fan control
     float pcbTemp = ctrl.getPCBTemperature();
 
-    // Control cooling fans based on PCB temperature
-    if (pcbTemp > 45.0)
-    {
-      ctrl.setFansSpeed(255); // Full speed if too hot
-    }
-    else if (pcbTemp > 37.5)
-    {
-      ctrl.setFansSpeed(192); // 75% speed
-    }
-    else if (pcbTemp > 30.0)
-    {
-      ctrl.setFansSpeed(128); // 50% speed
-    }
-    else
-    {
-      ctrl.setFansSpeed(64); // 25% speed if cool
-    }
+    // Control cooling fans - always on with temperature-based speed
+    //if (pcbTemp > 45.0)
+      //ctrl.setFansSpeed(255); // Full speed if too hot
+    //else if (pcbTemp > 37.5)
+      //ctrl.setFansSpeed(192); // 75% speed
+    //else
+      //ctrl.setFansSpeed(128); // Minimum speed to ensure fans start reliably
   }
 
-  // --- 2. CONTROL ACTUATORS (every 100ms, called with sensors) ---
-  if (now - lastSensorRead < 20) // Called right after sensor read
-  {
-    inc.updateActuators();
-  }
-
-  // --- 3. SEND TELEMETRY TO UI (every 500ms) ---
-  if (now - lastTelemetrySend >= TELEMETRY_INTERVAL)
-  {
-    lastTelemetrySend = now;
-
-    // Build telemetry packet
-    String telemetry = wifi.buildSensorJson(
-        inc.temp1, inc.hum1,
-        inc.temp2, inc.hum2,
-        inc.uvIndex,
-        inc.co2Percent,
-        inc.flow1, inc.flow2);
-
-    // Send to all connected clients
-    WiFiClient client = wifi.server().available();
-    if (client && client.connected())
-    {
-      client.print(telemetry);
-    }
-  }
-
-  // --- 4. LISTEN FOR UI COMMANDS (every 100ms) ---
+  // --- 3. LISTEN FOR UI COMMANDS (every 100ms) ---
   if (now - lastClientCheck >= CLIENT_CHECK_INTERVAL)
   {
     lastClientCheck = now;

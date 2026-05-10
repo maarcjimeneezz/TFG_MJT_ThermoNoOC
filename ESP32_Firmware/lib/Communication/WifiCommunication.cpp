@@ -30,11 +30,24 @@ void WifiCommunication::begin(IPAddress ip, IPAddress gw, IPAddress sn)
 String WifiCommunication::getRequest(WiFiClient &client)
 {
     String request = "";
-    while (client.available())
+    unsigned long timeout = millis() + 200;
+
+    while (millis() < timeout && client.connected())
     {
-        char c = client.read();
-        request += c;
+        while (client.available())
+        {
+            char c = client.read();
+            request += c;
+        }
+
+        if (request.length() > 0)
+        {
+            break;
+        }
+
+        delay(10);
     }
+
     return request;
 }
 
@@ -92,7 +105,7 @@ String WifiCommunication::buildSensorJson(float t1, float h1, float t2, float h2
                   ",\"temp2\":" + String(t2, 2) +
                   ",\"hum2\":" + String(h2, 2) +
                   ",\"uv\":" + String(uv, 2) +
-                  ",\"co2\":" + String(co2, 0) +
+                  ",\"co2\":" + String(co2, 4) +
                   ",\"flow1\":" + String(f1, 2) +
                   ",\"flow2\":" + String(f2, 2) + "}\n";
     return json;
