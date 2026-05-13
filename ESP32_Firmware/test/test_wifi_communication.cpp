@@ -1,71 +1,91 @@
 /**
  * @file test_wifi_communication.cpp
- * @brief connectivity test: Blinks LED only when a PC connects to the AP.
+ * @brief Minimalist test to verify WebSocket connection and LED control.
  */
 
-// After Uploading the file to the ESP32 Board, go to file ../UI/pc_test_connection.py and execute it.
-// This file will connect the PC to the ESP32 Board, make the LED blink for 10 seconds
 #include <Arduino.h>
 #include "WifiCommunication.h"
+#include <WebSocketsServer.h>
 
-// --- AP Configuration ---
-const char *ssid = "ThermoNoOC";
-const char *password = "thermonooc";
-const int port = 5000;
-const int LED_PIN = 2; // Internal LED (GPIO 2 on most ESP32)
+// --- Global Objects ---
+// Creating the AP 'ThermoNoOC' on Port 5000
+WifiCommunication wifi("ThermoNoOC", "thermonooc", 5000);
 
-// --- Network IP Configuration ---
+// --- Network Configuration ---
 IPAddress local_IP(192, 168, 0, 132);
 IPAddress gateway(192, 168, 0, 1);
 IPAddress subnet(255, 255, 255, 0);
 
-// Initialize the communication object
-WifiCommunication wifi(ssid, password, port);
+// --- Hardware Pins ---
+const int DEBUG_LED = 2; // Internal LED for most ESP32 DevKits
+
+/**
+ * @brief WebSocket Event Handler
+ * This function triggers automatically when the PC UI sends data.
+ */
+void onWebSocketEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t length)
+{
+    switch (type)
+    {
+    case WStype_CONNECTED:
+        Serial.printf("[%u] UI Connected!\n", num);
+        break;
+
+    case WStype_DISCONNECTED:
+        Serial.printf("[%u] UI Disconnected\n", num);
+        break;
+
+    case WStype_TEXT:
+    {
+        String msg = (char *)(payload);
+        Serial.printf("[%u] Message from UI: %s\n", num, msg.c_str());
+
+        // Check if the command is "blink"
+        if (msg.indexOf("blink") != -1)
+        {
+            Serial.println("Action: Blinking LED...");
+            for (int i = 0; i < 5; i++)
+            {
+                digitalWrite(DEBUG_LED, HIGH);
+                delay(200);
+                digitalWrite(DEBUG_LED, LOW);
+                delay(200);
+            }
+
+            // Send an acknowledgment back to the UI
+            wifi.server().sendTXT(num, "{\"status\":\"success\", \"event\":\"blink_done\"}");
+        }
+    }
+    break;
+
+    case WStype_BIN:
+        break;
+
+    default:
+        break;
+    }
+}
 
 void setup_wifi_communication()
 {
+    // 1. Start Serial for debugging
     Serial.begin(115200);
-    pinMode(LED_PIN, OUTPUT);
-    digitalWrite(LED_PIN, LOW); // LED off by default
+    pinMode(DEBUG_LED, OUTPUT);
 
-    // Initialize WiFi Access Point
+    // 2. Initialize the WiFi Access Point and WebSocket Server
+    // This uses your WifiCommunication.cpp logic
     wifi.begin(local_IP, gateway, subnet);
 
-    Serial.println("\n--- WIFI AP CONNECTIVITY TEST ---");
-    Serial.print("SSID: ");
-    Serial.println(ssid);
-    Serial.print("IP:   ");
-    Serial.println(local_IP);
-    Serial.println("Waiting for PC connection...");
+    // 3. Attach the event handler to the server
+    wifi.server().onEvent(onWebSocketEvent);
+
+    Serial.println("\n--- TEST MODE READY ---");
+    Serial.println("1. Connect your PC to WiFi: 'ThermoNoOC'");
+    Serial.println("2. Open your WebSocket client on 192.168.0.132:5000");
 }
 
 void loop_wifi_communication()
 {
-    // Check if a client (PC) is connecting to the server
-    WiFiClient client = wifi.server().available();
-
-    if (client)
-    {
-        Serial.println("[!] PC Connected! Blinking LED...");
-
-        // While the PC is connected, blink the LED
-        while (client.connected())
-        {
-            digitalWrite(LED_PIN, HIGH);
-            delay(100);
-            digitalWrite(LED_PIN, LOW);
-            delay(100);
-
-            // Check if there's any data just to clear the buffer
-            while (client.available())
-            {
-                client.read();
-            }
-        }
-
-        // When PC disconnects
-        client.stop();
-        digitalWrite(LED_PIN, LOW);
-        Serial.println("[!] PC Disconnected. LED Off.");
-    }
+    // Crucial: This handles the WebSocket protocol background tasks
+    wifi.loop();
 }
