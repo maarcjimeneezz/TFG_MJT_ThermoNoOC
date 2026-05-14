@@ -7,7 +7,7 @@ ESP32 Access Point
     IP:       192.168.4.1
     WS URL:   ws://192.168.4.1:5000
 
-Telemetry JSON (500 ms cadence):
+Telemetry JSON (1 s cadence):
     temp1, temp2   – temperature °C (SHT35 x2)
     hum1,  hum2    – humidity %    (SHT35 x2)
     uvIndex        – UV index      (LTR390)
@@ -26,6 +26,7 @@ Dependencies:
 
 from __future__ import annotations
 
+import datetime
 import json
 import threading
 from collections import deque
@@ -43,8 +44,8 @@ import websocket  # websocket-client package
 # Constants
 # ─────────────────────────────────────────────────────────────────────────────
 WS_URL     = "ws://192.168.4.1:5000"
-BUFFER_LEN = 120      # 60 s of history at 500 ms/sample
-REDRAW_MS  = 500      # chart refresh cadence (ms)
+BUFFER_LEN = 120      # 120 s of history at 1 s/sample
+REDRAW_MS  = 1000     # chart refresh cadence (ms)
 
 # Per-series colours – visible on both dark and light backgrounds
 CLR = {
@@ -59,6 +60,12 @@ CLR = {
 # Chart theme palettes
 _DARK  = dict(bg="#1e1e2e", ax_bg="#252535", fg="#d4d4e8", grid="#353560")
 _LIGHT = dict(bg="#f0f4f8", ax_bg="#ffffff",  fg="#1a1a2e", grid="#d0d8e8")
+
+# Send button colour states
+_SEND_IDLE        = ("gray78", "gray23")
+_SEND_IDLE_HOVER  = ("gray68", "gray32")
+_SEND_READY       = "#1f6aa5"
+_SEND_READY_HOVER = "#1a5a8e"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -120,79 +127,6 @@ class WSClient:
         if self.on_status:
             self.on_status(False)
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Send-data dialog
-# ─────────────────────────────────────────────────────────────────────────────
-class SendDialog(ctk.CTkToplevel):
-    def __init__(self, parent: ctk.CTk, ws: WSClient) -> None:
-        super().__init__(parent)
-        self._ws = ws
-        self.title("Send to ESP32")
-        self.resizable(False, False)
-        self.grab_set()
-        self.lift()
-        self.focus_force()
-
-        P = {"padx": 20, "pady": 6}
-
-        # Temperature setpoint
-        ctk.CTkLabel(self, text="Temperature Setpoint",
-                     font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", **P)
-        row_t = ctk.CTkFrame(self, fg_color="transparent")
-        row_t.pack(anchor="w", padx=20, pady=(0, 14))
-        self._temp_var = ctk.StringVar(value="37.0")
-        ctk.CTkEntry(row_t, textvariable=self._temp_var, width=90).pack(side="left", padx=(0, 6))
-        ctk.CTkLabel(row_t, text="°C").pack(side="left")
-
-        # UV LED groups
-        ctk.CTkLabel(self, text="UV LED Groups",
-                     font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w", **P)
-
-        self._led_en:  list[ctk.BooleanVar] = []
-        self._led_int: list[ctk.IntVar]     = []
-
-        for i in range(4):
-            row = ctk.CTkFrame(self, fg_color="transparent")
-            row.pack(fill="x", padx=20, pady=3)
-            ctk.CTkLabel(row, text=f"Group {i + 1}", width=68, anchor="w").pack(side="left")
-
-            var_en = ctk.BooleanVar(value=False)
-            ctk.CTkSwitch(row, variable=var_en, text="",
-                          width=44, height=22).pack(side="left", padx=(4, 10))
-            self._led_en.append(var_en)
-
-            var_int = ctk.IntVar(value=50)
-            ctk.CTkSlider(row, from_=0, to=100,
-                          variable=var_int, width=150).pack(side="left")
-            self._led_int.append(var_int)
-
-            pct = ctk.CTkLabel(row, text=f"{var_int.get()}%", width=38)
-            pct.pack(side="left", padx=(6, 0))
-            var_int.trace_add(
-                "write",
-                lambda *_, v=var_int, lbl=pct: lbl.configure(text=f"{v.get()}%")
-            )
-
-        # Buttons
-        btn_row = ctk.CTkFrame(self, fg_color="transparent")
-        btn_row.pack(padx=20, pady=(14, 18), anchor="e")
-        ctk.CTkButton(btn_row, text="Send",   width=88, command=self._send).pack(side="left", padx=4)
-        ctk.CTkButton(btn_row, text="Cancel", width=88, command=self.destroy,
-                      fg_color="transparent", border_width=1).pack(side="left", padx=4)
-
-    def _send(self) -> None:
-        if not self._ws.connected:
-            return
-        try:
-            self._ws.send(f"SET_TEMP:{float(self._temp_var.get()):.1f}")
-        except ValueError:
-            pass
-        for i, (en, inten) in enumerate(zip(self._led_en, self._led_int)):
-            self._ws.send(f"SET_LED:{i + 1}:{int(en.get())}:{inten.get()}")
-        self.destroy()
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Chart utilities
 # ─────────────────────────────────────────────────────────────────────────────
@@ -224,6 +158,7 @@ def _draw_series(ax, t: list, series: list, pal: dict, ylabel: str = "") -> None
     _style_ax(ax, pal, ylabel)
     for y, label, color in series:
         ax.plot(t, y, color=color, linewidth=1.6, label=label, solid_capstyle="round")
+    ax.set_ylim(bottom=0)
     if len(series) > 1:
         ax.legend(fontsize=8, framealpha=0.25,
                   facecolor=pal["ax_bg"], labelcolor=pal["fg"],
@@ -248,7 +183,7 @@ class App(ctk.CTk):
         self._lock    = threading.Lock()
         self._elapsed = 0.0
         self._t: deque = deque(
-            [round(-0.5 * (BUFFER_LEN - 1 - i), 1) for i in range(BUFFER_LEN)],
+            [round(-1.0 * (BUFFER_LEN - 1 - i), 1) for i in range(BUFFER_LEN)],
             maxlen=BUFFER_LEN,
         )
         self._bufs: dict[str, deque] = {
@@ -260,11 +195,18 @@ class App(ctk.CTk):
         self._ws           = WSClient()
         self._ws.on_data   = self._ingest
         self._ws.on_status = lambda ok: self.after(0, self._set_connected, ok)
+        self._was_connecting = False
+
+        # pending changes flag – controls Send Data button appearance
+        self._pending_changes = False
 
         # build
-        self._active = 0
+        self._active  = 0
+        self._closing = False
         self._build()
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(REDRAW_MS, self._tick)
+        self._update_clock()
 
     # ── layout skeleton ───────────────────────────────────────────────────────
     def _build(self) -> None:
@@ -279,7 +221,7 @@ class App(ctk.CTk):
                            fg_color=("gray88", "gray13"))
         hdr.grid(row=0, column=0, sticky="ew")
         hdr.grid_propagate(False)
-        # elastic spacer at column 4 pushes controls to the right
+        # elastic spacer pushes controls to the right
         hdr.grid_columnconfigure(4, weight=1)
 
         TAB_NAMES = ["  Incubator  ", "  UV Light  ", "  Microfluidics  "]
@@ -301,21 +243,27 @@ class App(ctk.CTk):
 
         self._conn_lbl = ctk.CTkLabel(hdr, text="Disconnected",
                                       font=ctk.CTkFont(size=11))
-        self._conn_lbl.grid(row=0, column=6, padx=(0, 16))
+        self._conn_lbl.grid(row=0, column=6, padx=(0, 12))
+
+        # clock — left of connect button
+        self._clock_lbl = ctk.CTkLabel(hdr, text="00:00:00",
+                                       font=ctk.CTkFont(size=11))
+        self._clock_lbl.grid(row=0, column=7, padx=(0, 12))
 
         # connect / disconnect
         self._conn_btn = ctk.CTkButton(
             hdr, text="Connect", width=100, height=34, corner_radius=6,
             command=self._toggle_connect,
         )
-        self._conn_btn.grid(row=0, column=7, padx=4)
+        self._conn_btn.grid(row=0, column=8, padx=4)
 
-        # send data
-        ctk.CTkButton(
+        # send data — muted until a control value changes
+        self._send_btn = ctk.CTkButton(
             hdr, text="Send Data", width=100, height=34, corner_radius=6,
-            fg_color=("gray78", "gray23"), hover_color=("gray68", "gray32"),
-            command=self._open_send,
-        ).grid(row=0, column=8, padx=4)
+            fg_color=_SEND_IDLE, hover_color=_SEND_IDLE_HOVER,
+            command=self._send_data,
+        )
+        self._send_btn.grid(row=0, column=9, padx=4)
 
         # theme toggle
         self._theme_btn = ctk.CTkButton(
@@ -324,7 +272,7 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=15),
             command=self._toggle_theme,
         )
-        self._theme_btn.grid(row=0, column=9, padx=(4, 12))
+        self._theme_btn.grid(row=0, column=10, padx=(4, 12))
 
         self._highlight_tab()
 
@@ -352,22 +300,58 @@ class App(ctk.CTk):
                      font=ctk.CTkFont(size=18, weight="bold")).grid(
             row=0, column=0, padx=20, pady=(18, 6), sticky="w")
 
-        # Temperature card
-        tc = self._card(fr, row=1, title="Temperature (°C)")
+        # Safety toggle — must be Closed before sensors/actuators run
+        self._incubator_closed = False
+        self._incubator_btn = ctk.CTkButton(
+            fr,
+            text="Incubator Opened",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color="#c0392b",
+            hover_color="#a93226",
+            text_color="white",
+            width=220, height=40,
+            corner_radius=8,
+            command=self._toggle_incubator,
+        )
+        self._incubator_btn.grid(row=1, column=0, padx=20, pady=(0, 14), sticky="w")
+
+        # Temperature card — plot + target slider
+        tc = self._card(fr, row=2, title="Temperature (°C)")
         self._temp_fig, self._temp_ax = _make_fig(2.8)
         self._temp_canvas = FigureCanvasTkAgg(self._temp_fig, master=tc)
         self._temp_canvas.draw()
-        self._temp_canvas.get_tk_widget().pack(fill="x", padx=8, pady=(0, 10))
+        self._temp_canvas.get_tk_widget().pack(fill="x", padx=8, pady=(0, 6))
+
+        # Target temperature slider below the plot
+        ctrl_row = ctk.CTkFrame(tc, fg_color="transparent")
+        ctrl_row.pack(fill="x", padx=8, pady=(0, 10))
+        ctk.CTkLabel(ctrl_row, text="Target:",
+                     font=ctk.CTkFont(size=11), width=52, anchor="w").pack(side="left")
+        self._temp_set_var = ctk.DoubleVar(value=37.0)
+        self._temp_set_lbl = ctk.CTkLabel(ctrl_row, text="37.0 °C", width=62, anchor="e",
+                                           font=ctk.CTkFont(size=11))
+        self._temp_set_lbl.pack(side="right", padx=(0, 4))
+        ctk.CTkSlider(
+            ctrl_row, from_=20, to=45,
+            variable=self._temp_set_var,
+            command=lambda _: self._on_ctrl_change(),
+        ).pack(side="left", fill="x", expand=True, padx=(4, 4))
+        self._temp_set_var.trace_add(
+            "write",
+            lambda *_: self._temp_set_lbl.configure(
+                text=f"{self._temp_set_var.get():.1f} °C"
+            ),
+        )
 
         # Humidity card
-        hc = self._card(fr, row=2, title="Humidity (%)")
+        hc = self._card(fr, row=3, title="Humidity (%)")
         self._hum_fig, self._hum_ax = _make_fig(2.8)
         self._hum_canvas = FigureCanvasTkAgg(self._hum_fig, master=hc)
         self._hum_canvas.draw()
         self._hum_canvas.get_tk_widget().pack(fill="x", padx=8, pady=(0, 10))
 
         # CO₂ card
-        cc = self._card(fr, row=3, title="CO₂ Concentration (%)")
+        cc = self._card(fr, row=4, title="CO₂ Concentration (%)")
         self._co2_fig, self._co2_ax = _make_fig(2.8)
         self._co2_canvas = FigureCanvasTkAgg(self._co2_fig, master=cc)
         self._co2_canvas.draw()
@@ -385,7 +369,7 @@ class App(ctk.CTk):
                      font=ctk.CTkFont(size=18, weight="bold")).grid(
             row=0, column=0, columnspan=2, padx=20, pady=(18, 6), sticky="w")
 
-        # Irradiance plot (left, expands)
+        # Irradiance plot + LED controls (left, expands)
         plot_card = ctk.CTkFrame(fr, corner_radius=12)
         plot_card.grid(row=1, column=0, padx=(20, 6), pady=(0, 24), sticky="nsew")
         ctk.CTkLabel(plot_card, text="Irradiance (W/m²)",
@@ -395,6 +379,40 @@ class App(ctk.CTk):
         self._uv_canvas = FigureCanvasTkAgg(self._uv_fig, master=plot_card)
         self._uv_canvas.draw()
         self._uv_canvas.get_tk_widget().pack(fill="x", padx=8, pady=(0, 10))
+
+        # UV LED group controls below the irradiance plot
+        ctk.CTkLabel(plot_card, text="UV LED Groups",
+                     font=ctk.CTkFont(size=12, weight="bold")).pack(
+            anchor="w", padx=12, pady=(4, 4))
+
+        self._led_en:  list[ctk.BooleanVar] = []
+        self._led_int: list[ctk.IntVar]     = []
+
+        for i in range(4):
+            row = ctk.CTkFrame(plot_card, fg_color="transparent")
+            row.pack(fill="x", padx=12, pady=3)
+            ctk.CTkLabel(row, text=f"Group {i + 1}", width=68, anchor="w").pack(side="left")
+
+            var_en = ctk.BooleanVar(value=False)
+            ctk.CTkSwitch(row, variable=var_en, text="",
+                          width=44, height=22,
+                          command=self._on_ctrl_change).pack(side="left", padx=(4, 10))
+            self._led_en.append(var_en)
+
+            var_int = ctk.IntVar(value=50)
+            ctk.CTkSlider(row, from_=0, to=100,
+                          variable=var_int, width=150,
+                          command=lambda _: self._on_ctrl_change()).pack(side="left")
+            self._led_int.append(var_int)
+
+            pct = ctk.CTkLabel(row, text="50%", width=38)
+            pct.pack(side="left", padx=(6, 0))
+            var_int.trace_add(
+                "write",
+                lambda *_, v=var_int, lbl=pct: lbl.configure(text=f"{v.get()}%"),
+            )
+
+        ctk.CTkFrame(plot_card, height=8, fg_color="transparent").pack()
 
         # Info box (right, fixed width)
         info = ctk.CTkFrame(fr, width=196, corner_radius=12)
@@ -472,27 +490,84 @@ class App(ctk.CTk):
                 fg_color="#1f6aa5" if i == self._active else ("gray78", "gray23")
             )
 
+    # ── incubator safety toggle ───────────────────────────────────────────────
+    def _toggle_incubator(self) -> None:
+        self._incubator_closed = not self._incubator_closed
+        if self._incubator_closed:
+            self._incubator_btn.configure(
+                text="Incubator Closed",
+                fg_color="#1e8449",
+                hover_color="#196f3d",
+            )
+        else:
+            self._incubator_btn.configure(
+                text="Incubator Opened",
+                fg_color="#c0392b",
+                hover_color="#a93226",
+            )
+        self._ws.send(f"SET_INCUBATOR:{1 if self._incubator_closed else 0}")
+
+    # ── window close ──────────────────────────────────────────────────────────
+    def _on_close(self) -> None:
+        self._closing = True
+        self._ws.disconnect()
+        self.destroy()
+
     # ── connection ────────────────────────────────────────────────────────────
     def _toggle_connect(self) -> None:
         if self._ws.connected:
             self._ws.disconnect()
         else:
+            self._was_connecting = True
+            self._dot.configure(text_color="#FFD93D")
+            self._conn_lbl.configure(text="Connecting…")
+            self._conn_btn.configure(text="Cancel", state="normal")
             self._ws.connect(WS_URL)
 
     def _set_connected(self, ok: bool) -> None:
+        if self._closing or not self.winfo_exists():
+            return
         if ok:
+            self._was_connecting = False
             self._dot.configure(text_color="#26de81")
             self._conn_lbl.configure(text="Connected")
             self._conn_btn.configure(text="Disconnect")
         else:
-            self._dot.configure(text_color="gray42")
-            self._conn_lbl.configure(text="Disconnected")
+            if self._was_connecting:
+                self._dot.configure(text_color="#FF6B6B")
+                self._conn_lbl.configure(text="Connection failed")
+            else:
+                self._dot.configure(text_color="gray42")
+                self._conn_lbl.configure(text="Disconnected")
+            self._was_connecting = False
             self._conn_btn.configure(text="Connect")
+
+    # ── clock ─────────────────────────────────────────────────────────────────
+    def _update_clock(self) -> None:
+        if self._closing or not self.winfo_exists():
+            return
+        self._clock_lbl.configure(text=datetime.datetime.now().strftime("%H:%M:%S"))
+        self.after(1000, self._update_clock)
+
+    # ── control-change tracking ───────────────────────────────────────────────
+    def _on_ctrl_change(self, *_) -> None:
+        self._pending_changes = True
+        self._send_btn.configure(fg_color=_SEND_READY, hover_color=_SEND_READY_HOVER)
+
+    # ── send data directly ────────────────────────────────────────────────────
+    def _send_data(self) -> None:
+        if not self._ws.connected:
+            return
+        self._ws.send(f"SET_TEMP:{self._temp_set_var.get():.1f}")
+        for i, (en, inten) in enumerate(zip(self._led_en, self._led_int)):
+            self._ws.send(f"SET_LED:{i + 1}:{int(en.get())}:{inten.get()}")
+        self._pending_changes = False
+        self._send_btn.configure(fg_color=_SEND_IDLE, hover_color=_SEND_IDLE_HOVER)
 
     # ── data ingestion (called from WS thread) ────────────────────────────────
     def _ingest(self, data: dict) -> None:
         with self._lock:
-            self._elapsed += 0.5
+            self._elapsed += 1.0
             self._t.append(self._elapsed)
             self._bufs["temp1"].append(float(data.get("temp1", 0)))
             self._bufs["temp2"].append(float(data.get("temp2", 0)))
@@ -504,21 +579,44 @@ class App(ctk.CTk):
 
     # ── redraw loop ───────────────────────────────────────────────────────────
     def _tick(self) -> None:
+        if self._closing or not self.winfo_exists():
+            return
         self._redraw()
         self.after(REDRAW_MS, self._tick)
 
     def _redraw(self) -> None:
         with self._lock:
-            t       = list(self._t)
-            temp1   = list(self._bufs["temp1"])
-            temp2   = list(self._bufs["temp2"])
-            hum1    = list(self._bufs["hum1"])
-            hum2    = list(self._bufs["hum2"])
-            co2     = list(self._bufs["co2"])
-            uv_irr  = list(self._bufs["uv_irr"])
-            uv_idx  = list(self._bufs["uv_idx"])
+            t      = list(self._t)
+            temp1  = list(self._bufs["temp1"])
+            temp2  = list(self._bufs["temp2"])
+            hum1   = list(self._bufs["hum1"])
+            hum2   = list(self._bufs["hum2"])
+            co2    = list(self._bufs["co2"])
+            uv_irr = list(self._bufs["uv_irr"])
+            uv_idx = list(self._bufs["uv_idx"])
 
         pal = _pal()
+
+        # Nothing drawn while incubator is open
+        if not self._incubator_closed:
+            if self._active == 0:
+                for ax, fig, canvas, lbl in [
+                    (self._temp_ax, self._temp_fig, self._temp_canvas, "°C"),
+                    (self._hum_ax,  self._hum_fig,  self._hum_canvas,  "%"),
+                    (self._co2_ax,  self._co2_fig,  self._co2_canvas,  "%"),
+                ]:
+                    ax.cla()
+                    _style_ax(ax, pal, lbl)
+                    fig.patch.set_facecolor(pal["bg"])
+                    canvas.draw_idle()
+            elif self._active == 1:
+                self._uv_ax.cla()
+                _style_ax(self._uv_ax, pal, "W/m²")
+                self._uv_fig.patch.set_facecolor(pal["bg"])
+                self._uv_canvas.draw_idle()
+                self._uvi_val.configure(text="—")
+                self._irr_val.configure(text="—")
+            return
 
         if self._active == 0:
             _draw_series(self._temp_ax, t,
@@ -558,10 +656,6 @@ class App(ctk.CTk):
         new = "Light" if ctk.get_appearance_mode() == "Dark" else "Dark"
         ctk.set_appearance_mode(new)
         self._theme_btn.configure(text="☀" if new == "Dark" else "🌙")
-
-    # ── send dialog ───────────────────────────────────────────────────────────
-    def _open_send(self) -> None:
-        SendDialog(self, self._ws)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

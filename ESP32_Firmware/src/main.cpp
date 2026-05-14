@@ -34,6 +34,12 @@ LED_Array leds;
 Microfluidics fluidics;
 
 // ---------------------------------------------------------------------------
+// Safety interlock — all sensor/actuator activity is gated behind this flag.
+// It is set to true only when the UI confirms the incubator lid is closed.
+// ---------------------------------------------------------------------------
+static bool is_Incubator_Closed = false;
+
+// ---------------------------------------------------------------------------
 // Telemetry timing
 // ---------------------------------------------------------------------------
 static unsigned long lastTelemetryMs = 0;
@@ -68,6 +74,11 @@ void on_WebSocket_Event(uint8_t clientNum, WStype_t type, uint8_t *payload, size
         leds.set_Group_Intensity(group, inten);
     }
 
+    // --- Incubator safety interlock ---
+    // Expected format: "SET_INCUBATOR:1" (closed) / "SET_INCUBATOR:0" (opened)
+    else if (msg.startsWith("SET_INCUBATOR:"))
+        is_Incubator_Closed = msg.substring(14).toInt() != 0;
+
     // --- Pump circuit configuration ---
     // Expected format: "SET_PUMP:1:500.0:0:0:0:0"
     //   fields: circuit, flowRate_uLmin, pulsed, feedTime_s, pauseTime_s, cycles
@@ -98,6 +109,7 @@ String build_Telemetry_JSON()
     float flow2 = fluidics.read_Flow_Rate(2);
 
     String json = "{";
+    json += "\"incubatorClosed\":" + String(is_Incubator_Closed ? 1 : 0) + ",";
     json += "\"temp1\":" + String(incubator.temp1, 2) + ",";
     json += "\"hum1\":" + String(incubator.hum1, 1) + ",";
     json += "\"temp2\":" + String(incubator.temp2, 2) + ",";
@@ -129,19 +141,21 @@ void setup()
 
 void loop()
 {
-    // 1. WiFi: service WebSocket heartbeats and dispatch incoming commands
+    // 1. WiFi always runs — needed to receive SET_INCUBATOR and other commands
     wifi.loop();
 
-    // 2. Incubator: non-blocking sensor poll (CO2 state machine advances here)
-    incubator.read_All_Sensors();
+    // 2. Safety gate: heater, LEDs, pumps and sensors are all inhibited while
+    //    the incubator lid is open to protect both the operator and the hardware.
+    if (is_Incubator_Closed)
+    {
+        incubator.read_All_Sensors();
+        incubator.update_Heater_PWM();
+        control.update_Fan_Speed(control.read_PCB_Temperature());
+        leds.update_All_Groups();
+        fluidics.update_Pumps();
+    }
 
-    // 3. Actuator updates — each module drives only its own hardware
-    incubator.update_Heater_PWM();
-    control.update_Fan_Speed(control.read_PCB_Temperature());
-    leds.update_All_Groups();
-    fluidics.update_Pumps();
-
-    // 4. Periodic telemetry broadcast
+    // 3. Telemetry always broadcasts so the UI reflects the current interlock state
     if (millis() - lastTelemetryMs >= TELEMETRY_INTERVAL_MS)
     {
         lastTelemetryMs = millis();
