@@ -5,51 +5,45 @@ Control::Control() {}
 
 void Control::begin()
 {
-    // --- Initialize ESP32 LEDC PWM peripheral for fans ---
-    ledcSetup(fanCh, fanFreq, fanRes);
-    ledcAttachPin(PIN_PWM_FANS, fanCh);
+    ledcSetup(FAN_PWM_CH, FAN_FREQ_HZ, FAN_RES_BIT);
+    ledcAttachPin(PIN_PWM_FANS, FAN_PWM_CH);
+    set_Fan_Speed(0);
 
-    // --- Ensure fans are off at startup ---
-    setFansSpeed(0);
-
-    // --- Set ADC resolution to 12-bit (0-4095) for better precision ---
     analogReadResolution(12);
-    analogSetAttenuation(ADC_11db); // Set attenuation for full 3.3V range on ADC
+    analogSetAttenuation(ADC_11db);
 }
 
-float Control::getPCBTemperature()
+int Control::read_NTC_ADC_Average() const
 {
-    analogReadResolution(12);                        // Ensure ADC is set to 12-bit resolution
-    analogSetPinAttenuation(PIN_TEMP_PCB, ADC_11db); // Set attenuation for the NTC pin to read up to 3.3V
-
-    // Average multiple readings to reduce noise
+    // Per-pin attenuation ensures the full 3.3 V range on PIN_TEMP_PCB
+    analogSetPinAttenuation(PIN_TEMP_PCB, ADC_11db);
     long sum = 0;
-    for (int i = 0; i < 15; i++)
-    {
+    for (int i = 0; i < ADC_SAMPLES; i++)
         sum += analogRead(PIN_TEMP_PCB);
-        delay(1); // Short delay between readings
-    }
-    int adcAvg = sum / 15; // Use the average of the 15 readings
-
-    // Voltage Calculation
-    float vFixed = (adcAvg * 3.3) / 4095.0; // Convert ADC value to voltage (assuming 3.3V reference)
-
-    // Resistance Calculation
-    float rNtc = R_FIXED * ((3.3 - vFixed) / vFixed); // Calculate NTC resistance using voltage divider formula
-
-    // Beta Equation to calculate temperature in Kelvin
-    float tempK = 1.0 / ((1.0 / T0) + (1.0 / BETA) * log(rNtc / R0));
-
-    // Convert Kelvin to Celsius
-    float tempC = tempK - 273.15;
-
-    Serial.printf("NTC ADC: %d, Voltage: %.2f V, R_ntc: %.2f Ohms, Temp: %.2f °C\n", adcAvg, vFixed, rNtc, tempC);
-
-    return tempC;
+    return (int)(sum / ADC_SAMPLES);
 }
 
-void Control::setFansSpeed(uint8_t speed)
+float Control::convert_ADC_To_Temperature(int adcAvg) const
 {
-    // Since all 4 fans share the same pin, this controls them simultaneously
-    ledcWrite(fanCh, speed);
+    float vFixed = (adcAvg * ADC_VREF) / (float)ADC_MAX;
+    float rNtc   = NTC_RFIXED * ((ADC_VREF - vFixed) / vFixed);
+    float tempK  = 1.0f / ((1.0f / NTC_T0) + (1.0f / NTC_BETA) * logf(rNtc / NTC_R0));
+    return tempK - 273.15f;
+}
+
+float Control::read_PCB_Temperature() const
+{
+    return convert_ADC_To_Temperature(read_NTC_ADC_Average());
+}
+
+void Control::set_Fan_Speed(uint8_t speed)
+{
+    ledcWrite(FAN_PWM_CH, speed);
+}
+
+void Control::update_Fan_Speed(float pcbTempC)
+{
+    float t = (pcbTempC - FAN_TEMP_OFF) / (FAN_TEMP_FULL - FAN_TEMP_OFF);
+    t = constrain(t, 0.0f, 1.0f);
+    set_Fan_Speed((uint8_t)(t * 255.0f));
 }

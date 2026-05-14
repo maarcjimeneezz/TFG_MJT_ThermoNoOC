@@ -1,55 +1,57 @@
 #include "LED_Array.h"
 
-LED_Array::LED_Array() {}
+const int LED_Array::CHANNELS[4] = {0, 1, 2, 3};
+const int LED_Array::PINS[4] = {PIN_C1_LEDS, PIN_C2_LEDS, PIN_C3_LEDS, PIN_C4_LEDS};
 
-void LED_Array::begin()
+LED_Array::LED_Array()
 {
-    // --- Configure LEDC PWM functionalities ---
-    ledcSetup(ledch1, ledFreq, ledRes);
-    ledcSetup(ledch2, ledFreq, ledRes);
-    ledcSetup(ledch3, ledFreq, ledRes);
-    ledcSetup(ledch4, ledFreq, ledRes);
-
-    // --- Bind physical GPIO pins (from Pinout.h) to the PWM channels ---
-    ledcAttachPin(PIN_C1_LEDS, ledch1);
-    ledcAttachPin(PIN_C2_LEDS, ledch2);
-    ledcAttachPin(PIN_C3_LEDS, ledch3);
-    ledcAttachPin(PIN_C4_LEDS, ledch4);
-
-    // --- Initialize all LEDs to 0 (OFF) ---
-    allOff();
-}
-
-void LED_Array::setBrightness(int group, int value)
-{
-    // Ensure the value stays within the 8-bit range (0-255)
-    uint8_t dutyCycle = (uint8_t)constrain(value, 0, 255);
-
-    switch (group)
+    for (int i = 0; i < NUM_GROUPS; i++)
     {
-    case 1:
-        ledcWrite(ledch1, dutyCycle);
-        break;
-    case 2:
-        ledcWrite(ledch2, dutyCycle);
-        break;
-    case 3:
-        ledcWrite(ledch3, dutyCycle);
-        break;
-    case 4:
-        ledcWrite(ledch4, dutyCycle);
-        break;
-    default:
-        // Invalid group requested
-        break;
+        _enabled[i] = false;
+        _intensity[i] = 0;
     }
 }
 
-void LED_Array::allOff()
+void LED_Array::begin()
 {
-    // Turn off all four PWM channels
-    ledcWrite(ledch1, 0);
-    ledcWrite(ledch2, 0);
-    ledcWrite(ledch3, 0);
-    ledcWrite(ledch4, 0);
+    for (int i = 0; i < NUM_GROUPS; i++)
+    {
+        ledcSetup(CHANNELS[i], LED_FREQ_HZ, LED_RES_BIT);
+        ledcAttachPin(PINS[i], CHANNELS[i]);
+    }
+    all_Off();
+}
+
+void LED_Array::apply_PWM_To_Group(int idx)
+{
+    ledcWrite(CHANNELS[idx], _enabled[idx] ? _intensity[idx] : 0u);
+}
+
+void LED_Array::set_Group_Enabled(int group, bool enabled)
+{
+    if (group < 1 || group > NUM_GROUPS)
+        return;
+    _enabled[group - 1] = enabled;
+}
+
+void LED_Array::set_Group_Intensity(int group, uint8_t intensity)
+{
+    if (group < 1 || group > NUM_GROUPS)
+        return;
+    _intensity[group - 1] = intensity;
+}
+
+void LED_Array::update_All_Groups()
+{
+    for (int i = 0; i < NUM_GROUPS; i++)
+        apply_PWM_To_Group(i);
+}
+
+void LED_Array::all_Off()
+{
+    for (int i = 0; i < NUM_GROUPS; i++)
+    {
+        _enabled[i] = false;
+        ledcWrite(CHANNELS[i], 0);
+    }
 }
