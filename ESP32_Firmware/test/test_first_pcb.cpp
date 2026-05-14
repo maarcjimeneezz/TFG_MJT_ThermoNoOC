@@ -38,7 +38,7 @@ void loop_first_pcb()
 
     // Thermal Reading
     // This uses your Control library logic which likely uses the Steinhart-Hart equation
-    float currentTemp = control_pcb.getPCBTemperature();
+    float currentTemp = control_pcb.read_PCB_Temperature();
 
     Serial.print("[INFO] Heartbeat OK | PCB Temperature: ");
     Serial.print(currentTemp);

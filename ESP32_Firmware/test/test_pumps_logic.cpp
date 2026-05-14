@@ -26,18 +26,18 @@ void setup_pumps_logic()
     // Note: The Mux switches channels fast enough that they seem to start at once.
 
     // Liquid path
-    fluidics.setPumpFrequency(1, 80);
-    fluidics.setPumpVoltage(1, 180); // High amplitude to test power stability
+    fluidics.set_Pump_Frequency(1, 80);
+    fluidics.set_Pump_Voltage(1, 180); // High amplitude to test power stability
 
-    fluidics.setPumpFrequency(3, 80);
-    fluidics.setPumpVoltage(3, 180);
+    fluidics.set_Pump_Frequency(3, 80);
+    fluidics.set_Pump_Voltage(3, 180);
 
     // Air path (Bubble trap)
-    fluidics.setPumpFrequency(2, 300);
-    fluidics.setPumpVoltage(2, 220); // Air usually needs more "punch"
+    fluidics.set_Pump_Frequency(2, 300);
+    fluidics.set_Pump_Voltage(2, 220); // Air usually needs more "punch"
 
-    fluidics.setPumpFrequency(4, 300);
-    fluidics.setPumpVoltage(4, 220);
+    fluidics.set_Pump_Frequency(4, 300);
+    fluidics.set_Pump_Voltage(4, 220);
 
     Serial.println("All pumps are running. Monitoring flow sensors...");
 }
@@ -45,8 +45,8 @@ void setup_pumps_logic()
 void loop_pumps_logic()
 {
     // Read both flow sensors while pumps are active
-    float f1 = fluidics.getFlowRate(1);
-    float f2 = fluidics.getFlowRate(2);
+    float f1 = fluidics.read_Flow_Rate(1);
+    float f2 = fluidics.read_Flow_Rate(2);
 
     Serial.print("Flow Readings -> Sensor 1: ");
     Serial.print(f1);

@@ -4,12 +4,12 @@
  */
 
 #include <Arduino.h>
-#include "WifiCommunication.h"
+#include "WiFiManager.h"
 #include <WebSocketsServer.h>
 
 // --- Global Objects ---
 // Creating the AP 'ThermoNoOC' on Port 5000
-WifiCommunication wifi("ThermoNoOC", "thermonooc", 5000);
+WiFiManager wifi("ThermoNoOC", "thermonooc", 5000);
 
 // --- Network Configuration ---
 IPAddress local_IP(192, 168, 0, 132);
