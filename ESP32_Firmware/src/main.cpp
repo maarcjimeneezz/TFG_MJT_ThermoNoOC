@@ -40,10 +40,13 @@ Microfluidics fluidics;
 static bool is_Incubator_Closed = false;
 
 // ---------------------------------------------------------------------------
-// Telemetry timing
+// Telemetry timing — two independent intervals
 // ---------------------------------------------------------------------------
-static unsigned long lastTelemetryMs = 0;
-static const unsigned long TELEMETRY_INTERVAL_MS = 500;
+static unsigned long lastIncubatorTelemetryMs = 0;
+static const unsigned long INCUBATOR_TELEMETRY_INTERVAL_MS = 1000;
+
+static unsigned long lastFlowTelemetryMs = 0;
+static const unsigned long FLOW_TELEMETRY_INTERVAL_MS = 500;
 
 // ---------------------------------------------------------------------------
 // WebSocket command handler (registered in setup, executed by WiFiManager::loop)
@@ -101,24 +104,27 @@ void on_WebSocket_Event(uint8_t clientNum, WStype_t type, uint8_t *payload, size
 }
 
 // ---------------------------------------------------------------------------
-// Build telemetry JSON from each module's latest readings
+// Telemetry JSON builders — split by update rate
 // ---------------------------------------------------------------------------
-String build_Telemetry_JSON()
+String build_Incubator_Telemetry_JSON()
 {
-    float flow1 = fluidics.read_Flow_Rate(1);
-    float flow2 = fluidics.read_Flow_Rate(2);
-
     String json = "{";
-    json += "\"incubatorClosed\":" + String(is_Incubator_Closed ? 1 : 0) + ",";
     json += "\"temp1\":" + String(incubator.temp1, 2) + ",";
     json += "\"hum1\":" + String(incubator.hum1, 1) + ",";
     json += "\"temp2\":" + String(incubator.temp2, 2) + ",";
     json += "\"hum2\":" + String(incubator.hum2, 1) + ",";
     json += "\"uvIndex\":" + String(incubator.uvIndex, 3) + ",";
     json += "\"uvW\":" + String(incubator.uvIrradiance, 4) + ",";
-    json += "\"co2\":" + String(incubator.co2Percent, 4) + ",";
-    json += "\"flow1\":" + String(flow1, 1) + ",";
-    json += "\"flow2\":" + String(flow2, 1);
+    json += "\"co2\":" + String(incubator.co2Percent, 4);
+    json += "}";
+    return json;
+}
+
+String build_Flow_Telemetry_JSON()
+{
+    String json = "{";
+    json += "\"flow1\":" + String(fluidics.read_Flow_Rate(1), 1) + ",";
+    json += "\"flow2\":" + String(fluidics.read_Flow_Rate(2), 1);
     json += "}";
     return json;
 }
@@ -156,9 +162,15 @@ void loop()
     }
 
     // 3. Telemetry always broadcasts so the UI reflects the current interlock state
-    if (millis() - lastTelemetryMs >= TELEMETRY_INTERVAL_MS)
+    unsigned long now = millis();
+    if (now - lastIncubatorTelemetryMs >= INCUBATOR_TELEMETRY_INTERVAL_MS)
     {
-        lastTelemetryMs = millis();
-        wifi.broadcast(build_Telemetry_JSON());
+        lastIncubatorTelemetryMs = now;
+        wifi.broadcast(build_Incubator_Telemetry_JSON());
+    }
+    if (now - lastFlowTelemetryMs >= FLOW_TELEMETRY_INTERVAL_MS)
+    {
+        lastFlowTelemetryMs = now;
+        wifi.broadcast(build_Flow_Telemetry_JSON());
     }
 }
