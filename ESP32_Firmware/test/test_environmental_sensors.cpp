@@ -27,7 +27,7 @@ void setup_environmental_sensors()
 void loop_environmental_sensors()
 {
     // Update all readings
-    incubator.readEnvironment();
+    incubator.read_All_Sensors();
 
     Serial.println("--- Environment Report ---");
 
