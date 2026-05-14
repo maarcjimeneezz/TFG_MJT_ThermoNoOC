@@ -236,19 +236,19 @@ class App(ctk.CTk):
             b.grid(row=0, column=i, padx=(10 if i == 0 else 3, 0), pady=10)
             self._tab_btns.append(b)
 
+        # clock — left of connect button
+        self._clock_lbl = ctk.CTkLabel(hdr, text="00:00:00",
+                                       font=ctk.CTkFont(family="Helvetica", size=20, weight="bold"))
+        self._clock_lbl.grid(row=0, column=5, padx=(0, 12))
+        
         # status indicator
         self._dot = ctk.CTkLabel(hdr, text="●",
                                  font=ctk.CTkFont(size=17), text_color="gray42")
-        self._dot.grid(row=0, column=5, padx=(14, 2))
+        self._dot.grid(row=0, column=6, padx=(14, 2))
 
         self._conn_lbl = ctk.CTkLabel(hdr, text="Disconnected",
                                       font=ctk.CTkFont(size=11))
-        self._conn_lbl.grid(row=0, column=6, padx=(0, 12))
-
-        # clock — left of connect button
-        self._clock_lbl = ctk.CTkLabel(hdr, text="00:00:00",
-                                       font=ctk.CTkFont(size=11))
-        self._clock_lbl.grid(row=0, column=7, padx=(0, 12))
+        self._conn_lbl.grid(row=0, column=7, padx=(0, 12))
 
         # connect / disconnect
         self._conn_btn = ctk.CTkButton(
@@ -315,24 +315,33 @@ class App(ctk.CTk):
         )
         self._incubator_btn.grid(row=1, column=0, padx=20, pady=(0, 14), sticky="w")
 
-        # Temperature card — plot + target slider
-        tc = self._card(fr, row=2, title="Temperature (°C)")
+        # Temperature row — plot left, sensor values info box right
+        temp_row = ctk.CTkFrame(fr, fg_color="transparent")
+        temp_row.grid(row=2, column=0, padx=20, pady=(0, 10), sticky="ew")
+        temp_row.grid_columnconfigure(0, weight=1)
+        temp_row.grid_columnconfigure(1, weight=0)
+
+        temp_plot = ctk.CTkFrame(temp_row, corner_radius=12)
+        temp_plot.grid(row=0, column=0, padx=(0, 6), sticky="ew")
+        ctk.CTkLabel(temp_plot, text="Temperature (°C)",
+                     font=ctk.CTkFont(size=12, weight="bold")).pack(
+            anchor="w", padx=12, pady=(10, 4))
         self._temp_fig, self._temp_ax = _make_fig(2.8)
-        self._temp_canvas = FigureCanvasTkAgg(self._temp_fig, master=tc)
+        self._temp_canvas = FigureCanvasTkAgg(self._temp_fig, master=temp_plot)
         self._temp_canvas.draw()
         self._temp_canvas.get_tk_widget().pack(fill="x", padx=8, pady=(0, 6))
 
         # Target temperature slider below the plot
-        ctrl_row = ctk.CTkFrame(tc, fg_color="transparent")
+        ctrl_row = ctk.CTkFrame(temp_plot, fg_color="transparent")
         ctrl_row.pack(fill="x", padx=8, pady=(0, 10))
-        ctk.CTkLabel(ctrl_row, text="Target:",
-                     font=ctk.CTkFont(size=11), width=52, anchor="w").pack(side="left")
-        self._temp_set_var = ctk.DoubleVar(value=37.0)
-        self._temp_set_lbl = ctk.CTkLabel(ctrl_row, text="37.0 °C", width=62, anchor="e",
+        ctk.CTkLabel(ctrl_row, text="Target Temperature:",
+                     font=ctk.CTkFont(size=12), width=52, anchor="w").pack(side="left")
+        self._temp_set_var = ctk.DoubleVar(value=20.0)
+        self._temp_set_lbl = ctk.CTkLabel(ctrl_row, text="20.0 °C", width=62, anchor="e",
                                            font=ctk.CTkFont(size=11))
         self._temp_set_lbl.pack(side="right", padx=(0, 4))
         ctk.CTkSlider(
-            ctrl_row, from_=20, to=45,
+            ctrl_row, from_=20, to=60,
             variable=self._temp_set_var,
             command=lambda _: self._on_ctrl_change(),
         ).pack(side="left", fill="x", expand=True, padx=(4, 4))
@@ -343,19 +352,109 @@ class App(ctk.CTk):
             ),
         )
 
-        # Humidity card
-        hc = self._card(fr, row=3, title="Humidity (%)")
+        info_temp = ctk.CTkFrame(temp_row, width=196, corner_radius=12)
+        info_temp.grid(row=0, column=1, sticky="ns")
+        info_temp.pack_propagate(False)
+
+        ctk.CTkLabel(info_temp, text="GlassSensor",
+                     font=ctk.CTkFont(size=13, weight="bold")).pack(pady=(20, 2))
+        self._temp1_val = ctk.CTkLabel(
+            info_temp, text="—",
+            font=ctk.CTkFont(size=36, weight="bold"),
+            text_color=CLR["temp1"],
+        )
+        self._temp1_val.pack()
+        ctk.CTkLabel(info_temp, text="°C", font=ctk.CTkFont(size=10),
+                     text_color=("gray55", "gray55")).pack(pady=(2, 10))
+
+        ctk.CTkFrame(info_temp, height=1, fg_color=("gray72", "gray28")).pack(fill="x", padx=14)
+
+        ctk.CTkLabel(info_temp, text="Base Sensor",
+                     font=ctk.CTkFont(size=13, weight="bold")).pack(pady=(10, 2))
+        self._temp2_val = ctk.CTkLabel(
+            info_temp, text="—",
+            font=ctk.CTkFont(size=36, weight="bold"),
+            text_color=CLR["temp2"],
+        )
+        self._temp2_val.pack()
+        ctk.CTkLabel(info_temp, text="°C", font=ctk.CTkFont(size=10),
+                     text_color=("gray55", "gray55")).pack(pady=(2, 20))
+
+        # Humidity row — plot left, sensor values info box right
+        hum_row = ctk.CTkFrame(fr, fg_color="transparent")
+        hum_row.grid(row=3, column=0, padx=20, pady=(0, 10), sticky="ew")
+        hum_row.grid_columnconfigure(0, weight=1)
+        hum_row.grid_columnconfigure(1, weight=0)
+
+        hum_plot = ctk.CTkFrame(hum_row, corner_radius=12)
+        hum_plot.grid(row=0, column=0, padx=(0, 6), sticky="ew")
+        ctk.CTkLabel(hum_plot, text="Humidity (%)",
+                     font=ctk.CTkFont(size=12, weight="bold")).pack(
+            anchor="w", padx=12, pady=(10, 4))
         self._hum_fig, self._hum_ax = _make_fig(2.8)
-        self._hum_canvas = FigureCanvasTkAgg(self._hum_fig, master=hc)
+        self._hum_canvas = FigureCanvasTkAgg(self._hum_fig, master=hum_plot)
         self._hum_canvas.draw()
         self._hum_canvas.get_tk_widget().pack(fill="x", padx=8, pady=(0, 10))
 
-        # CO₂ card
-        cc = self._card(fr, row=4, title="CO₂ Concentration (%)")
+        info_hum = ctk.CTkFrame(hum_row, width=196, corner_radius=12)
+        info_hum.grid(row=0, column=1, sticky="ns")
+        info_hum.pack_propagate(False)
+
+        ctk.CTkLabel(info_hum, text="Glass Sensor",
+                     font=ctk.CTkFont(size=13, weight="bold")).pack(pady=(20, 2))
+        self._hum1_val = ctk.CTkLabel(
+            info_hum, text="—",
+            font=ctk.CTkFont(size=36, weight="bold"),
+            text_color=CLR["hum1"],
+        )
+        self._hum1_val.pack()
+        ctk.CTkLabel(info_hum, text="%", font=ctk.CTkFont(size=10),
+                     text_color=("gray55", "gray55")).pack(pady=(2, 10))
+
+        ctk.CTkFrame(info_hum, height=1, fg_color=("gray72", "gray28")).pack(fill="x", padx=14)
+
+        ctk.CTkLabel(info_hum, text="Base Sensor",
+                     font=ctk.CTkFont(size=13, weight="bold")).pack(pady=(10, 2))
+        self._hum2_val = ctk.CTkLabel(
+            info_hum, text="—",
+            font=ctk.CTkFont(size=36, weight="bold"),
+            text_color=CLR["hum2"],
+        )
+        self._hum2_val.pack()
+        ctk.CTkLabel(info_hum, text="%", font=ctk.CTkFont(size=10),
+                     text_color=("gray55", "gray55")).pack(pady=(2, 20))
+
+        # CO₂ row — plot left, PPM info box right
+        co2_row = ctk.CTkFrame(fr, fg_color="transparent")
+        co2_row.grid(row=4, column=0, padx=20, pady=(0, 10), sticky="ew")
+        co2_row.grid_columnconfigure(0, weight=1)
+        co2_row.grid_columnconfigure(1, weight=0)
+
+        co2_plot = ctk.CTkFrame(co2_row, corner_radius=12)
+        co2_plot.grid(row=0, column=0, padx=(0, 6), sticky="ew")
+        ctk.CTkLabel(co2_plot, text="CO₂ Concentration (%)",
+                     font=ctk.CTkFont(size=12, weight="bold")).pack(
+            anchor="w", padx=12, pady=(10, 4))
         self._co2_fig, self._co2_ax = _make_fig(2.8)
-        self._co2_canvas = FigureCanvasTkAgg(self._co2_fig, master=cc)
+        self._co2_canvas = FigureCanvasTkAgg(self._co2_fig, master=co2_plot)
         self._co2_canvas.draw()
         self._co2_canvas.get_tk_widget().pack(fill="x", padx=8, pady=(0, 10))
+
+        info_co2 = ctk.CTkFrame(co2_row, width=196, corner_radius=12)
+        info_co2.grid(row=0, column=1, sticky="ns")
+        info_co2.pack_propagate(False)
+
+        ctk.CTkLabel(info_co2, text="CO₂",
+                     font=ctk.CTkFont(size=13, weight="bold")).pack(pady=(28, 4))
+        self._co2_ppm_val = ctk.CTkLabel(
+            info_co2, text="—",
+            font=ctk.CTkFont(size=50, weight="bold"),
+            text_color=CLR["co2"],
+        )
+        self._co2_ppm_val.pack()
+        ctk.CTkLabel(info_co2, text="ppm",
+                     font=ctk.CTkFont(size=10),
+                     text_color=("gray55", "gray55")).pack(pady=(2, 24))
 
         return fr
 
@@ -380,39 +479,58 @@ class App(ctk.CTk):
         self._uv_canvas.draw()
         self._uv_canvas.get_tk_widget().pack(fill="x", padx=8, pady=(0, 10))
 
-        # UV LED group controls below the irradiance plot
+        # UV LED group controls below the irradiance plot — 2×2 grid of cards
         ctk.CTkLabel(plot_card, text="UV LED Groups",
                      font=ctk.CTkFont(size=12, weight="bold")).pack(
             anchor="w", padx=12, pady=(4, 4))
+
+        led_grid = ctk.CTkFrame(plot_card, fg_color="transparent")
+        led_grid.pack(fill="x", padx=8, pady=(0, 10))
+        led_grid.grid_columnconfigure(0, weight=1)
+        led_grid.grid_columnconfigure(1, weight=1)
 
         self._led_en:  list[ctk.BooleanVar] = []
         self._led_int: list[ctk.IntVar]     = []
 
         for i in range(4):
-            row = ctk.CTkFrame(plot_card, fg_color="transparent")
-            row.pack(fill="x", padx=12, pady=3)
-            ctk.CTkLabel(row, text=f"Group {i + 1}", width=68, anchor="w").pack(side="left")
+            r, c = divmod(i, 2)
+            card = ctk.CTkFrame(led_grid, corner_radius=8)
+            card.grid(row=r, column=c, padx=4, pady=4, sticky="nsew")
+
+            ctk.CTkLabel(card, text=f"LED Group {i + 1}",
+                         font=ctk.CTkFont(size=15, weight="bold")).pack(pady=(10, 6))
 
             var_en = ctk.BooleanVar(value=False)
-            ctk.CTkSwitch(row, variable=var_en, text="",
+            var_int = ctk.IntVar(value=50)
+
+            pct = ctk.CTkLabel(card, text="50%", font=ctk.CTkFont(size=10))
+            slider = ctk.CTkSlider(
+                card, from_=0, to=100,
+                variable=var_int, height=12, button_length=12,
+                state="disabled",
+                command=lambda _: self._on_ctrl_change(),
+            )
+
+            def _en_cmd(sw=var_en, sl=slider):
+                sl.configure(state="normal" if sw.get() else "disabled")
+                self._on_ctrl_change()
+
+            en_row = ctk.CTkFrame(card, fg_color="transparent")
+            en_row.pack(pady=(0, 6))
+            ctk.CTkLabel(en_row, text="Enable",
+                         font=ctk.CTkFont(size=11)).pack(side="left", padx=(0, 6))
+            ctk.CTkSwitch(en_row, variable=var_en, text="",
                           width=44, height=22,
-                          command=self._on_ctrl_change).pack(side="left", padx=(4, 10))
+                          command=_en_cmd).pack(side="left")
             self._led_en.append(var_en)
 
-            var_int = ctk.IntVar(value=50)
-            ctk.CTkSlider(row, from_=0, to=100,
-                          variable=var_int, width=150,
-                          command=lambda _: self._on_ctrl_change()).pack(side="left")
+            pct.pack()
+            slider.pack(fill="x", padx=14, pady=(2, 12))
             self._led_int.append(var_int)
-
-            pct = ctk.CTkLabel(row, text="50%", width=38)
-            pct.pack(side="left", padx=(6, 0))
             var_int.trace_add(
                 "write",
                 lambda *_, v=var_int, lbl=pct: lbl.configure(text=f"{v.get()}%"),
             )
-
-        ctk.CTkFrame(plot_card, height=8, fg_color="transparent").pack()
 
         # Info box (right, fixed width)
         info = ctk.CTkFrame(fr, width=196, corner_radius=12)
@@ -609,6 +727,11 @@ class App(ctk.CTk):
                     _style_ax(ax, pal, lbl)
                     fig.patch.set_facecolor(pal["bg"])
                     canvas.draw_idle()
+                self._temp1_val.configure(text="—")
+                self._temp2_val.configure(text="—")
+                self._hum1_val.configure(text="—")
+                self._hum2_val.configure(text="—")
+                self._co2_ppm_val.configure(text="—")
             elif self._active == 1:
                 self._uv_ax.cla()
                 _style_ax(self._uv_ax, pal, "W/m²")
@@ -620,24 +743,30 @@ class App(ctk.CTk):
 
         if self._active == 0:
             _draw_series(self._temp_ax, t,
-                         [(temp1, "Sensor 1", CLR["temp1"]),
-                          (temp2, "Sensor 2", CLR["temp2"])],
+                         [(temp1, "Glass Sensor", CLR["temp1"]),
+                          (temp2, "Base Sensor", CLR["temp2"])],
                          pal, ylabel="°C")
             self._temp_fig.patch.set_facecolor(pal["bg"])
             self._temp_canvas.draw_idle()
+            self._temp1_val.configure(text=f"{temp1[-1]:.1f}" if temp1 else "—")
+            self._temp2_val.configure(text=f"{temp2[-1]:.1f}" if temp2 else "—")
 
             _draw_series(self._hum_ax, t,
-                         [(hum1, "Sensor 1", CLR["hum1"]),
-                          (hum2, "Sensor 2", CLR["hum2"])],
+                         [(hum1, "Glass Sensor", CLR["hum1"]),
+                          (hum2, "Base Sensor", CLR["hum2"])],
                          pal, ylabel="%")
             self._hum_fig.patch.set_facecolor(pal["bg"])
             self._hum_canvas.draw_idle()
+            self._hum1_val.configure(text=f"{hum1[-1]:.1f}" if hum1 else "—")
+            self._hum2_val.configure(text=f"{hum2[-1]:.1f}" if hum2 else "—")
 
             _draw_series(self._co2_ax, t,
                          [(co2, "CO₂", CLR["co2"])],
                          pal, ylabel="%")
             self._co2_fig.patch.set_facecolor(pal["bg"])
             self._co2_canvas.draw_idle()
+            last_co2 = co2[-1] if co2 else 0.0
+            self._co2_ppm_val.configure(text=f"{last_co2 * 1000:.0f}")
 
         elif self._active == 1:
             _draw_series(self._uv_ax, t,
