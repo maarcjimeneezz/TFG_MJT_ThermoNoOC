@@ -24,7 +24,10 @@ void LED_Array::begin()
 
 void LED_Array::apply_PWM_To_Group(int idx)
 {
-    ledcWrite(CHANNELS[idx], _enabled[idx] ? _intensity[idx] : 0u);
+    uint8_t pwm = 0;
+    if (_enabled[idx] && _intensity[idx] > 0)
+        pwm = LED_PWM_MIN + (_intensity[idx] * (255 - LED_PWM_MIN)) / 100;
+    ledcWrite(CHANNELS[idx], pwm);
 }
 
 void LED_Array::set_Group_Enabled(int group, bool enabled)
