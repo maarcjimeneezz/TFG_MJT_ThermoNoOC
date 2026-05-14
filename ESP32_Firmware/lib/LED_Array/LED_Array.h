@@ -17,8 +17,9 @@ class LED_Array
 {
 private:
     static const int NUM_GROUPS = 4;
-    static const int LED_FREQ_HZ = 5000; // 5 kHz eliminates visible flicker
-    static const int LED_RES_BIT = 8;    // 0-255 duty cycle range
+    static const int     LED_FREQ_HZ = 5000; // 5 kHz eliminates visible flicker
+    static const int     LED_RES_BIT = 8;   // 0-255 duty cycle range
+    static const uint8_t LED_PWM_MIN = 128; // 50 % floor — LEDs need this to actually light up
 
     // Defined in .cpp to keep Pinout.h macros out of the header
     static const int CHANNELS[NUM_GROUPS]; // LEDC channels 0-3

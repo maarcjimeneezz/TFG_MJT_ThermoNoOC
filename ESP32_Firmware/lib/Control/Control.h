@@ -28,9 +28,10 @@ private:
     static const int ADC_MAX = 4095;   // 12-bit full-scale
     static const int ADC_SAMPLES = 15; // Averaged to suppress ADC noise
 
-    // Linear fan curve: fully off below OFF_TEMP, fully on above FULL_TEMP
-    static constexpr float FAN_TEMP_OFF = 35.0f;  // °C
-    static constexpr float FAN_TEMP_FULL = 60.0f; // °C
+    // Linear fan curve: 50 % below MIN_TEMP, 100 % above FULL_TEMP. Fans always on.
+    static constexpr float FAN_TEMP_MIN  = 30.0f;  // °C — minimum-speed threshold
+    static constexpr float FAN_TEMP_FULL = 50.0f;  // °C — full-speed threshold
+    static const uint8_t   FAN_PWM_MIN   = 128;    // 50 % duty cycle floor
 
     int read_NTC_ADC_Average() const;
     float convert_ADC_To_Temperature(int adcAvg) const;

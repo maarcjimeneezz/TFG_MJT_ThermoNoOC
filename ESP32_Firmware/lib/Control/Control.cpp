@@ -7,7 +7,7 @@ void Control::begin()
 {
     ledcSetup(FAN_PWM_CH, FAN_FREQ_HZ, FAN_RES_BIT);
     ledcAttachPin(PIN_PWM_FANS, FAN_PWM_CH);
-    set_Fan_Speed(0);
+    set_Fan_Speed(FAN_PWM_MIN);
 
     analogReadResolution(12);
     analogSetAttenuation(ADC_11db);
@@ -43,7 +43,7 @@ void Control::set_Fan_Speed(uint8_t speed)
 
 void Control::update_Fan_Speed(float pcbTempC)
 {
-    float t = (pcbTempC - FAN_TEMP_OFF) / (FAN_TEMP_FULL - FAN_TEMP_OFF);
+    float t = (pcbTempC - FAN_TEMP_MIN) / (FAN_TEMP_FULL - FAN_TEMP_MIN);
     t = constrain(t, 0.0f, 1.0f);
-    set_Fan_Speed((uint8_t)(t * 255.0f));
+    set_Fan_Speed(FAN_PWM_MIN + (uint8_t)(t * (255 - FAN_PWM_MIN)));
 }

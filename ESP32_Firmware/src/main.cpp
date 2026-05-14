@@ -55,7 +55,7 @@ void on_WebSocket_Event(uint8_t clientNum, WStype_t type, uint8_t *payload, size
         incubator.targetTemperature = msg.substring(9).toFloat();
 
     // --- LED group control ---
-    // Expected format: "SET_LED:1:1:200"  (group, enabled 0/1, intensity 0-255)
+    // Expected format: "SET_LED:1:1:75"  (group, enabled 0/1, intensity 0-100)
     else if (msg.startsWith("SET_LED:"))
     {
         int g1 = msg.indexOf(':');
