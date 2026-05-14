@@ -6,40 +6,46 @@
 
 /**
  * @class LED_Array
- * @brief Manages the UV LED array through 4 independent PWM channels.
+ * @brief Manages the 4-group UV LED matrix via independent LEDC PWM channels.
+ *
+ * Single responsibility: LED state (enabled/intensity) and PWM output.
+ * Callers set state via set_Group_Enabled / set_Group_Intensity and call
+ * update_All_Groups() each loop tick to apply changes to hardware.
+ * No knowledge of incubator targets, pumps, WiFi, or sensors.
  */
 class LED_Array
 {
 private:
-    // --- PWM Configuration ---
-    const int ledFreq = 5000; // 5 kHz to avoid flickering
-    const int ledRes = 8;     // 8-bit (0-255) for easy LabVIEW mapping
+    static const int NUM_GROUPS = 4;
+    static const int LED_FREQ_HZ = 5000; // 5 kHz eliminates visible flicker
+    static const int LED_RES_BIT = 8;    // 0-255 duty cycle range
 
-    // --- PWM Channels (ESP32 has 16 independent channels 0-15) ---
-    const int ledch1 = 0;
-    const int ledch2 = 1;
-    const int ledch3 = 2;
-    const int ledch4 = 3;
+    // Defined in .cpp to keep Pinout.h macros out of the header
+    static const int CHANNELS[NUM_GROUPS]; // LEDC channels 0-3
+    static const int PINS[NUM_GROUPS];     // GPIO pins from Pinout.h
+
+    bool _enabled[NUM_GROUPS];
+    uint8_t _intensity[NUM_GROUPS];
+
+    void apply_PWM_To_Group(int idx);
 
 public:
     LED_Array();
 
-    /**
-     * Initializes the PWM hardware for all LED channels.
-     */
+    /** Configures all 4 LEDC channels and sets LEDs to OFF. Call once in setup(). */
     void begin();
 
-    /**
-     * Sets brightness for a specific LED group independently.
-     * @param group The LED group number (1 to 4).
-     * @param value PWM duty cycle (0 to 255).
-     */
-    void setBrightness(int group, int value);
+    /** Enables or disables group (1-4). Takes effect on next update_All_Groups(). */
+    void set_Group_Enabled(int group, bool enabled);
 
-    /**
-     * Turns off all LED groups simultaneously.
-     */
-    void allOff();
+    /** Sets brightness (0-255) for group (1-4). Takes effect on next update_All_Groups(). */
+    void set_Group_Intensity(int group, uint8_t intensity);
+
+    /** Applies current enabled/intensity state to all PWM channels. Call every loop(). */
+    void update_All_Groups();
+
+    /** Immediately drives all channels to 0 and clears enabled/intensity state. */
+    void all_Off();
 };
 
-#endif
+#endif // LED_ARRAY_H
