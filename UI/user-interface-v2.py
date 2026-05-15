@@ -356,7 +356,7 @@ class App(ctk.CTk):
         info_temp.grid(row=0, column=1, sticky="ns")
         info_temp.pack_propagate(False)
 
-        ctk.CTkLabel(info_temp, text="GlassSensor",
+        ctk.CTkLabel(info_temp, text="Glass Sensor",
                      font=ctk.CTkFont(size=13, weight="bold")).pack(pady=(20, 2))
         self._temp1_val = ctk.CTkLabel(
             info_temp, text="—",
