@@ -766,7 +766,7 @@ class App(ctk.CTk):
             self._co2_fig.patch.set_facecolor(pal["bg"])
             self._co2_canvas.draw_idle()
             last_co2 = co2[-1] if co2 else 0.0
-            self._co2_ppm_val.configure(text=f"{last_co2 * 1000:.0f}")
+            self._co2_ppm_val.configure(text=f"{last_co2 * 10000:.0f}")
 
         elif self._active == 1:
             _draw_series(self._uv_ax, t,
