@@ -40,13 +40,10 @@ Microfluidics fluidics;
 static bool is_Incubator_Closed = false;
 
 // ---------------------------------------------------------------------------
-// Telemetry timing — two independent intervals
+// Telemetry timing — single 1 s broadcast containing all sensor data
 // ---------------------------------------------------------------------------
-static unsigned long lastIncubatorTelemetryMs = 0;
-static const unsigned long INCUBATOR_TELEMETRY_INTERVAL_MS = 1000;
-
-static unsigned long lastFlowTelemetryMs = 0;
-static const unsigned long FLOW_TELEMETRY_INTERVAL_MS = 500;
+static unsigned long lastTelemetryMs = 0;
+static const unsigned long TELEMETRY_INTERVAL_MS = 1000;
 
 // ---------------------------------------------------------------------------
 // WebSocket command handler (registered in setup, executed by WiFiManager::loop)
@@ -104,9 +101,9 @@ void on_WebSocket_Event(uint8_t clientNum, WStype_t type, uint8_t *payload, size
 }
 
 // ---------------------------------------------------------------------------
-// Telemetry JSON builders — split by update rate
+// Telemetry JSON builder — all sensor data in one 1 s broadcast
 // ---------------------------------------------------------------------------
-String build_Incubator_Telemetry_JSON()
+String build_Telemetry_JSON()
 {
     String json = "{";
     json += "\"temp1\":" + String(incubator.temp1, 2) + ",";
@@ -115,14 +112,7 @@ String build_Incubator_Telemetry_JSON()
     json += "\"hum2\":" + String(incubator.hum2, 1) + ",";
     json += "\"uvIndex\":" + String(incubator.uvIndex, 3) + ",";
     json += "\"uvW\":" + String(incubator.uvIrradiance, 4) + ",";
-    json += "\"co2\":" + String(incubator.co2Percent, 4);
-    json += "}";
-    return json;
-}
-
-String build_Flow_Telemetry_JSON()
-{
-    String json = "{";
+    json += "\"co2\":" + String(incubator.co2Percent, 4) + ",";
     json += "\"flow1\":" + String(fluidics.read_Flow_Rate(1), 1) + ",";
     json += "\"flow2\":" + String(fluidics.read_Flow_Rate(2), 1);
     json += "}";
@@ -163,14 +153,9 @@ void loop()
 
     // 3. Telemetry always broadcasts so the UI reflects the current interlock state
     unsigned long now = millis();
-    if (now - lastIncubatorTelemetryMs >= INCUBATOR_TELEMETRY_INTERVAL_MS)
+    if (now - lastTelemetryMs >= TELEMETRY_INTERVAL_MS)
     {
-        lastIncubatorTelemetryMs = now;
-        wifi.broadcast(build_Incubator_Telemetry_JSON());
-    }
-    if (now - lastFlowTelemetryMs >= FLOW_TELEMETRY_INTERVAL_MS)
-    {
-        lastFlowTelemetryMs = now;
-        wifi.broadcast(build_Flow_Telemetry_JSON());
+        lastTelemetryMs = now;
+        wifi.broadcast(build_Telemetry_JSON());
     }
 }
