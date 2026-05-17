@@ -751,6 +751,9 @@ class App(ctk.CTk):
             self._bufs["uv_irr"].append(float(data.get("uvW",     0)))
             self._bufs["uv_idx"].append(float(data.get("uvIndex", 0)))
 
+        # redraw immediately so the plot reflects this sample without waiting for _tick
+        self.after(0, self._redraw)
+
         with self._csv_lock:
             if self._csv_writer and self._incubator_closed:
                 row = [
