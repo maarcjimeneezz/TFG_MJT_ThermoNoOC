@@ -242,6 +242,7 @@ class App(ctk.CTk):
                 hdr, text=name, width=148, height=36, corner_radius=6,
                 fg_color=("gray78", "gray23"),
                 hover_color=("gray68", "gray32"),
+                text_color=("black", "white"),
                 command=lambda i=i: self._show(i),
             )
             b.grid(row=0, column=i, padx=(10 if i == 0 else 3, 0), pady=10)
@@ -616,9 +617,10 @@ class App(ctk.CTk):
 
     def _highlight_tab(self) -> None:
         for i, b in enumerate(self._tab_btns):
-            b.configure(
-                fg_color="#1f6aa5" if i == self._active else ("gray78", "gray23")
-            )
+            if i == self._active:
+                b.configure(fg_color="#1f6aa5", text_color="white")
+            else:
+                b.configure(fg_color=("gray78", "gray23"), text_color=("black", "white"))
 
     # ── incubator safety toggle ───────────────────────────────────────────────
     def _toggle_incubator(self) -> None:
