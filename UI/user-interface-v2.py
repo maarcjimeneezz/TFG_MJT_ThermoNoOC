@@ -200,6 +200,10 @@ class App(ctk.CTk):
         # pending changes flag – controls Send Data button appearance
         self._pending_changes = False
 
+        # last values confirmed sent – None means never sent
+        self._last_sent_temp: Optional[float] = None
+        self._last_sent_led: list[Optional[tuple]] = [None] * 4
+
         # build
         self._active  = 0
         self._closing = False
@@ -676,9 +680,15 @@ class App(ctk.CTk):
     def _send_data(self) -> None:
         if not self._ws.connected:
             return
-        self._ws.send(f"SET_TEMP:{self._temp_set_var.get():.1f}")
+        cur_temp = round(self._temp_set_var.get(), 1)
+        if cur_temp != self._last_sent_temp:
+            self._ws.send(f"SET_TEMP:{cur_temp:.1f}")
+            self._last_sent_temp = cur_temp
         for i, (en, inten) in enumerate(zip(self._led_en, self._led_int)):
-            self._ws.send(f"SET_LED:{i + 1}:{int(en.get())}:{inten.get()}")
+            state = (en.get(), inten.get())
+            if state != self._last_sent_led[i]:
+                self._ws.send(f"SET_LED:{i + 1}:{int(state[0])}:{state[1]}")
+                self._last_sent_led[i] = state
         self._pending_changes = False
         self._send_btn.configure(fg_color=_SEND_IDLE, hover_color=_SEND_IDLE_HOVER)
 
