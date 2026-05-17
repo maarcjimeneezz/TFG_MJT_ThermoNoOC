@@ -26,8 +26,10 @@ Dependencies:
 
 from __future__ import annotations
 
+import csv
 import datetime
 import json
+import pathlib
 import threading
 from collections import deque
 from typing import Callable, Optional
@@ -203,6 +205,11 @@ class App(ctk.CTk):
         # last values confirmed sent – None means never sent
         self._last_sent_temp: Optional[float] = None
         self._last_sent_led: list[Optional[tuple]] = [None] * 4
+
+        # CSV logging
+        self._csv_lock   = threading.Lock()
+        self._csv_file   = None
+        self._csv_writer = None
 
         # build
         self._active  = 0
@@ -629,10 +636,40 @@ class App(ctk.CTk):
             )
         self._ws.send(f"SET_INCUBATOR:{1 if self._incubator_closed else 0}")
 
+    # ── CSV logging ───────────────────────────────────────────────────────────
+    def _open_csv(self) -> None:
+        now = datetime.datetime.now()
+        base = pathlib.Path(__file__).parent / "Data_Logging"
+        day_folder = base / now.strftime("%Y%m%d")
+        day_folder.mkdir(parents=True, exist_ok=True)
+        path = day_folder / f"{now.strftime('%Y%m%d_%H%M%S')}.csv"
+        with self._csv_lock:
+            self._csv_file = open(path, "w", newline="", encoding="utf-8")
+            self._csv_writer = csv.writer(self._csv_file)
+            self._csv_writer.writerow([
+                "timestamp",
+                "temp1_C", "temp2_C", "hum1_pct", "hum2_pct",
+                "co2_pct", "uvW_Wm2", "uvIndex",
+                "target_temp_C",
+                "led1_en", "led1_int_pct",
+                "led2_en", "led2_int_pct",
+                "led3_en", "led3_int_pct",
+                "led4_en", "led4_int_pct",
+            ])
+            self._csv_file.flush()
+
+    def _close_csv(self) -> None:
+        with self._csv_lock:
+            if self._csv_file:
+                self._csv_file.close()
+                self._csv_file   = None
+                self._csv_writer = None
+
     # ── window close ──────────────────────────────────────────────────────────
     def _on_close(self) -> None:
         self._closing = True
         self._ws.disconnect()
+        self._close_csv()
         self.destroy()
 
     # ── connection ────────────────────────────────────────────────────────────
@@ -654,6 +691,7 @@ class App(ctk.CTk):
             self._dot.configure(text_color="#26de81")
             self._conn_lbl.configure(text="Connected")
             self._conn_btn.configure(text="Disconnect")
+            self._open_csv()
         else:
             if self._was_connecting:
                 self._dot.configure(text_color="#FF6B6B")
@@ -663,6 +701,7 @@ class App(ctk.CTk):
                 self._conn_lbl.configure(text="Disconnected")
             self._was_connecting = False
             self._conn_btn.configure(text="Connect")
+            self._close_csv()
 
     # ── clock ─────────────────────────────────────────────────────────────────
     def _update_clock(self) -> None:
@@ -704,6 +743,20 @@ class App(ctk.CTk):
             self._bufs["co2"].append(  float(data.get("co2",   0)))
             self._bufs["uv_irr"].append(float(data.get("uvW",     0)))
             self._bufs["uv_idx"].append(float(data.get("uvIndex", 0)))
+
+        with self._csv_lock:
+            if self._csv_writer:
+                row = [
+                    datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    data.get("temp1", ""), data.get("temp2", ""),
+                    data.get("hum1",  ""), data.get("hum2",  ""),
+                    data.get("co2",   ""), data.get("uvW",   ""), data.get("uvIndex", ""),
+                    f"{self._temp_set_var.get():.1f}",
+                ]
+                for en, inten in zip(self._led_en, self._led_int):
+                    row += [int(en.get()), inten.get()]
+                self._csv_writer.writerow(row)
+                self._csv_file.flush()
 
     # ── redraw loop ───────────────────────────────────────────────────────────
     def _tick(self) -> None:
