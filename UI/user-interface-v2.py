@@ -268,10 +268,11 @@ class App(ctk.CTk):
         )
         self._conn_btn.grid(row=0, column=8, padx=4)
 
-        # send data — muted until a control value changes
+        # send data — disabled until incubator is closed
         self._send_btn = ctk.CTkButton(
             hdr, text="Send Data", width=100, height=34, corner_radius=6,
             fg_color=_SEND_IDLE, hover_color=_SEND_IDLE_HOVER,
+            state="disabled",
             command=self._send_data,
         )
         self._send_btn.grid(row=0, column=9, padx=4)
@@ -628,12 +629,18 @@ class App(ctk.CTk):
                 fg_color="#1e8449",
                 hover_color="#196f3d",
             )
+            # restore Send Data to its correct state
+            if self._pending_changes:
+                self._send_btn.configure(state="normal", fg_color=_SEND_READY, hover_color=_SEND_READY_HOVER)
+            else:
+                self._send_btn.configure(state="normal", fg_color=_SEND_IDLE, hover_color=_SEND_IDLE_HOVER)
         else:
             self._incubator_btn.configure(
                 text="Incubator Opened",
                 fg_color="#c0392b",
                 hover_color="#a93226",
             )
+            self._send_btn.configure(state="disabled", fg_color=_SEND_IDLE, hover_color=_SEND_IDLE_HOVER)
         self._ws.send(f"SET_INCUBATOR:{1 if self._incubator_closed else 0}")
 
     # ── CSV logging ───────────────────────────────────────────────────────────
@@ -745,7 +752,7 @@ class App(ctk.CTk):
             self._bufs["uv_idx"].append(float(data.get("uvIndex", 0)))
 
         with self._csv_lock:
-            if self._csv_writer:
+            if self._csv_writer and self._incubator_closed:
                 row = [
                     datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     data.get("temp1", ""), data.get("temp2", ""),
