@@ -26,12 +26,25 @@ private:
     static const int ITO_RES_BIT = 8;
     static const int ITO_PWM_CH = 5;
 
-    // PID gains — tune on real hardware; these are conservative starting values
-    static constexpr float ITO_KP             = 8.0f;
+    // PID gains — tuned for a slow ambient thermal system with a fast ITO actuator
+    static constexpr float ITO_KP             = 3.0f;
     static constexpr float ITO_KI             = 0.05f;
     static constexpr float ITO_KD             = 2.0f;
-    static constexpr float ITO_INTEGRAL_LIMIT = 80.0f;  // anti-windup clamp
+    static constexpr float ITO_INTEGRAL_LIMIT = 40.0f;  // anti-windup clamp
     static constexpr float ITO_DERIV_ALPHA    = 0.1f;   // low-pass for noisy sensor
+
+    // Hard PWM output cap — the ITO glass has negligible thermal mass and reaches
+    // dangerous temperatures (~100 °C) at duty cycles as low as 16 %. This cap
+    // limits steady-state glass temperature regardless of PID output.
+    static const uint8_t ITO_PWM_MAX = 30;
+
+    // Forced cooling cycle — prevents runaway glass temperature when the ambient
+    // responds slowly. After ITO_MAX_ON_MS of cumulative on-time, the glass is
+    // forced off for ITO_MIN_OFF_MS regardless of PID output.
+    static const uint32_t ITO_MAX_ON_MS  = 5000;  // ms of cumulative on-time before forced cooling
+    static const uint32_t ITO_MIN_OFF_MS = 3000;  // ms of forced off time
+
+    enum class ITOPhase : uint8_t { HEATING, FORCED_COOL };
 
     // Max setpoint change rate (°C/s) — limits power ramp to protect ITO glass
     static constexpr float ITO_RAMP_RATE_CS = 0.5f;
@@ -61,6 +74,11 @@ private:
     float         _filteredDeriv;
     float         _rampedTarget;
     unsigned long _lastHeaterMs;
+
+    // Forced cooling cycle state
+    ITOPhase      _itoPhase;
+    unsigned long _itoPhaseStartMs;
+    unsigned long _itoOnAccumMs;
 
     void select_Sensor_Bus(uint8_t muxChannel);
     void read_SHT35_Sensors();

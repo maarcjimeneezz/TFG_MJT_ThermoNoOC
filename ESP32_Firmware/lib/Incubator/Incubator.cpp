@@ -9,9 +9,10 @@ Incubator::Incubator()
       temp2(0.0f), hum2(0.0f),
       uvIndex(0.0f), uvIrradiance(0.0f),
       co2Percent(0.0f),
-      targetTemperature(37.0f),
+      targetTemperature(20.0f),
       _integral(0.0f), _prevError(0.0f), _filteredDeriv(0.0f),
-      _rampedTarget(37.0f), _lastHeaterMs(0) {}
+      _rampedTarget(20.0f), _lastHeaterMs(0),
+      _itoPhase(ITOPhase::HEATING), _itoPhaseStartMs(0), _itoOnAccumMs(0) {}
 
 // ---------------------------------------------------------------------------
 // Private helpers
@@ -120,10 +121,13 @@ void Incubator::begin()
     set_ITO_Power(0);
 
     _rampedTarget = targetTemperature;
-    _integral     = 0.0f;
-    _prevError    = 0.0f;
+    _integral = 0.0f;
+    _prevError = 0.0f;
     _filteredDeriv = 0.0f;
     _lastHeaterMs = millis();
+    _itoPhase = ITOPhase::HEATING;
+    _itoPhaseStartMs = millis();
+    _itoOnAccumMs = 0;
 
     select_Sensor_Bus(MUX_CH_TEMP1);
     delay(50); // SHT35 power-on stabilisation (datasheet min: 1 ms; 50 ms for safety margin)
@@ -173,26 +177,60 @@ void Incubator::update_Heater_PWM()
     float dt = (float)(now - _lastHeaterMs) / 1000.0f;
     _lastHeaterMs = now;
     // Clamp dt on the first call or after a long gap (e.g. incubator was opened)
-    if (dt <= 0.0f || dt > 2.0f) dt = 0.1f;
+    if (dt <= 0.0f || dt > 2.0f)
+        dt = 0.1f;
 
     // Ramp the active setpoint — the primary ITO glass protection:
     // a sudden large target change is fed in gradually instead of all at once.
     float step = ITO_RAMP_RATE_CS * dt;
-    if      (targetTemperature > _rampedTarget + step)  _rampedTarget += step;
-    else if (targetTemperature < _rampedTarget - step)  _rampedTarget -= step;
-    else                                                  _rampedTarget = targetTemperature;
+    if (targetTemperature > _rampedTarget + step)
+        _rampedTarget += step;
+    else if (targetTemperature < _rampedTarget - step)
+        _rampedTarget -= step;
+    else
+        _rampedTarget = targetTemperature;
 
     float error = _rampedTarget - temp2;
 
     // Integral with anti-windup clamp
     _integral += error * dt;
-    _integral  = constrain(_integral, -ITO_INTEGRAL_LIMIT, ITO_INTEGRAL_LIMIT);
+    _integral = constrain(_integral, -ITO_INTEGRAL_LIMIT, ITO_INTEGRAL_LIMIT);
 
     // Derivative filtered against SHT35 sensor noise
-    float rawDeriv  = (error - _prevError) / dt;
-    _filteredDeriv  = ITO_DERIV_ALPHA * rawDeriv + (1.0f - ITO_DERIV_ALPHA) * _filteredDeriv;
-    _prevError      = error;
+    float rawDeriv = (error - _prevError) / dt;
+    _filteredDeriv = ITO_DERIV_ALPHA * rawDeriv + (1.0f - ITO_DERIV_ALPHA) * _filteredDeriv;
+    _prevError = error;
 
     float output = ITO_KP * error + ITO_KI * _integral + ITO_KD * _filteredDeriv;
-    set_ITO_Power((uint8_t)constrain((int)output, 0, 255));
+    uint8_t pwm = (uint8_t)constrain((int)output, 0, ITO_PWM_MAX);
+
+    // Forced cooling cycle — if the glass has been on for ITO_MAX_ON_MS, force it
+    // off for ITO_MIN_OFF_MS regardless of PID output.
+    if (_itoPhase == ITOPhase::FORCED_COOL)
+    {
+        if (now - _itoPhaseStartMs >= ITO_MIN_OFF_MS)
+        {
+            _itoPhase = ITOPhase::HEATING;
+            _itoOnAccumMs = 0;
+        }
+        else
+        {
+            set_ITO_Power(0);
+            return;
+        }
+    }
+
+    if (pwm > 0)
+    {
+        _itoOnAccumMs += (unsigned long)(dt * 1000.0f);
+        if (_itoOnAccumMs >= ITO_MAX_ON_MS)
+        {
+            _itoPhase = ITOPhase::FORCED_COOL;
+            _itoPhaseStartMs = now;
+            set_ITO_Power(0);
+            return;
+        }
+    }
+
+    set_ITO_Power(pwm);
 }
