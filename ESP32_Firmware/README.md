@@ -219,14 +219,17 @@ Pumps 1 and 3 control fluid flow and are driven by the PID. Pumps 2 and 4 run at
 
 ### Control Board (`Control` class)
 
-NTC thermistor (B57164K103J, 10 kΩ @ 25 °C, β = 4300 K) read on GPIO 36. Fan PWM on GPIO 12.
+NTC thermistor (B57164K103J, 10 kΩ @ 25 °C, β = 4300 K) on GPIO 36, 15-sample averaged. Fan PWM on GPIO 12 (25 kHz, 8-bit).
 
-| PCB temperature | Fan speed |
-|----------------|-----------|
-| > 45 °C | 100 % (255) |
-| > 37.5 °C | 75 % (192) |
-| > 30 °C | 50 % (128) |
-| ≤ 30 °C | 25 % (64) |
+Fan speed follows a **continuous linear curve** — fans are never fully off:
+
+| PCB temperature | Fan duty cycle |
+|----------------|----------------|
+| ≤ 30 °C | 50 % (PWM 128) — floor, always running |
+| 30 – 50 °C | Linear: 50 % → 100 % |
+| ≥ 50 °C | 100 % (PWM 255) — ceiling |
+
+Formula: `speed = 128 + t × (255 − 128)` where `t = clamp((T − 30) / (50 − 30), 0, 1)`
 
 ---
 
