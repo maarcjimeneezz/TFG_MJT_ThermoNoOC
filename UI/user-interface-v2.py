@@ -369,7 +369,7 @@ class App(ctk.CTk):
         info_temp.grid(row=0, column=1, sticky="ns")
         info_temp.pack_propagate(False)
 
-        ctk.CTkLabel(info_temp, text="Glass Sensor",
+        ctk.CTkLabel(info_temp, text="Top Sensor",
                      font=ctk.CTkFont(size=13, weight="bold")).pack(pady=(20, 2))
         self._temp1_val = ctk.CTkLabel(
             info_temp, text="—",
@@ -382,7 +382,7 @@ class App(ctk.CTk):
 
         ctk.CTkFrame(info_temp, height=1, fg_color=("gray72", "gray28")).pack(fill="x", padx=14)
 
-        ctk.CTkLabel(info_temp, text="Base Sensor",
+        ctk.CTkLabel(info_temp, text="Bottom Sensor",
                      font=ctk.CTkFont(size=13, weight="bold")).pack(pady=(10, 2))
         self._temp2_val = ctk.CTkLabel(
             info_temp, text="—",
@@ -413,7 +413,7 @@ class App(ctk.CTk):
         info_hum.grid(row=0, column=1, sticky="ns")
         info_hum.pack_propagate(False)
 
-        ctk.CTkLabel(info_hum, text="Glass Sensor",
+        ctk.CTkLabel(info_hum, text="Top Sensor",
                      font=ctk.CTkFont(size=13, weight="bold")).pack(pady=(20, 2))
         self._hum1_val = ctk.CTkLabel(
             info_hum, text="—",
@@ -426,7 +426,7 @@ class App(ctk.CTk):
 
         ctk.CTkFrame(info_hum, height=1, fg_color=("gray72", "gray28")).pack(fill="x", padx=14)
 
-        ctk.CTkLabel(info_hum, text="Base Sensor",
+        ctk.CTkLabel(info_hum, text="Bottom Sensor",
                      font=ctk.CTkFont(size=13, weight="bold")).pack(pady=(10, 2))
         self._hum2_val = ctk.CTkLabel(
             info_hum, text="—",
@@ -818,8 +818,8 @@ class App(ctk.CTk):
 
         if self._active == 0:
             _draw_series(self._temp_ax, t,
-                         [(temp1, "Glass Sensor", CLR["temp1"]),
-                          (temp2, "Base Sensor", CLR["temp2"])],
+                         [(temp1, "Top Sensor", CLR["temp1"]),
+                          (temp2, "Bottom Sensor", CLR["temp2"])],
                          pal, ylabel="°C")
             self._temp_fig.patch.set_facecolor(pal["bg"])
             self._temp_canvas.draw_idle()
@@ -827,8 +827,8 @@ class App(ctk.CTk):
             self._temp2_val.configure(text=f"{temp2[-1]:.1f}" if temp2 else "—")
 
             _draw_series(self._hum_ax, t,
-                         [(hum1, "Glass Sensor", CLR["hum1"]),
-                          (hum2, "Base Sensor", CLR["hum2"])],
+                         [(hum1, "Top Sensor", CLR["hum1"]),
+                          (hum2, "Bottom Sensor", CLR["hum2"])],
                          pal, ylabel="%")
             self._hum_fig.patch.set_facecolor(pal["bg"])
             self._hum_canvas.draw_idle()

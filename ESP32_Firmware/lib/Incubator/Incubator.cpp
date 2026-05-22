@@ -190,7 +190,8 @@ void Incubator::update_Heater_PWM()
     else
         _rampedTarget = targetTemperature;
 
-    float error = _rampedTarget - temp2;
+    float avgTemp = (temp1 + temp2) / 2.0f;
+    float error = _rampedTarget - avgTemp;
 
     // Integral with anti-windup clamp
     _integral += error * dt;
