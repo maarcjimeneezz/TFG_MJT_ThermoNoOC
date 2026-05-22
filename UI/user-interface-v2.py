@@ -1052,6 +1052,7 @@ class App(ctk.CTk):
                 text="Microfluidics Opened",
                 fg_color="#c0392b", hover_color="#a93226",
             )
+        self._ws.send(f"SET_MICRO:{1 if self._micro_closed else 0}")
         self._update_send_btn()
 
     # ── pump mode toggle ──────────────────────────────────────────────────────

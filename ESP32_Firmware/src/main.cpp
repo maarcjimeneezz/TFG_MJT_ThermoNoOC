@@ -39,6 +39,10 @@ Microfluidics fluidics;
 // ---------------------------------------------------------------------------
 static bool is_Incubator_Closed = false;
 
+// Microfluidics interlock — pumps and flow sensors are inhibited while the
+// microfluidics circuit is open. Independent of the incubator interlock.
+static bool is_Micro_Closed = false;
+
 // ---------------------------------------------------------------------------
 // Telemetry timing — single 1 s broadcast containing all sensor data
 // ---------------------------------------------------------------------------
@@ -79,6 +83,16 @@ void on_WebSocket_Event(uint8_t clientNum, WStype_t type, uint8_t *payload, size
     else if (msg.startsWith("SET_INCUBATOR:"))
         is_Incubator_Closed = msg.substring(14).toInt() != 0;
 
+    // --- Microfluidics interlock ---
+    // Expected format: "SET_MICRO:1" (closed) / "SET_MICRO:0" (opened)
+    else if (msg.startsWith("SET_MICRO:"))
+    {
+        bool closed = msg.substring(10).toInt() != 0;
+        if (!closed && is_Micro_Closed)
+            fluidics.stop_All(); // Immediately kill pumps when circuit is opened
+        is_Micro_Closed = closed;
+    }
+
     // --- Pump circuit configuration ---
     // Expected format: "SET_PUMP:1:500.0:0:0:0:0"
     //   fields: circuit, flowRate_uLmin, pulsed, feedTime_s, pauseTime_s, cycles
@@ -113,8 +127,8 @@ String build_Telemetry_JSON()
     json += "\"uvIndex\":" + String(incubator.uvIndex, 3) + ",";
     json += "\"uvW\":" + String(incubator.uvIrradiance, 4) + ",";
     json += "\"co2\":" + String(incubator.co2Percent, 4) + ",";
-    json += "\"flow1\":" + String(fluidics.read_Flow_Rate(1), 1) + ",";
-    json += "\"flow2\":" + String(fluidics.read_Flow_Rate(2), 1);
+    json += "\"flow1\":" + String(fluidics.get_Last_Flow_Reading(1), 1) + ",";
+    json += "\"flow2\":" + String(fluidics.get_Last_Flow_Reading(2), 1);
     json += "}";
     return json;
 }
@@ -148,7 +162,9 @@ void loop()
         incubator.update_Heater_PWM();
         control.update_Fan_Speed(control.read_PCB_Temperature());
         leds.update_All_Groups();
-        fluidics.update_Pumps();
+
+        if (is_Micro_Closed)
+            fluidics.update_Pumps();
     }
 
     // 3. Telemetry always broadcasts so the UI reflects the current interlock state

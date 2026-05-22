@@ -9,12 +9,14 @@ Microfluidics::Microfluidics()
 {
     for (int i = 0; i < NUM_CIRCUITS; i++)
     {
-        _lastCycleTime[i] = 0;
-        _cycleCount[i] = 0;
+        _lastCycleTime[i]  = 0;
+        _cycleCount[i]     = 0;
+        _lastFlowReading[i] = 0.0f;
+        _pid[i]            = PidState{};
     }
     for (int i = 0; i < NUM_PUMPS; i++)
     {
-        _curVoltage[i] = 0;
+        _curVoltage[i]  = 0;
         _curFreqByte[i] = 0;
     }
 }
@@ -182,45 +184,88 @@ uint8_t Microfluidics::flow_Rate_To_Freq_Byte(float flowRate_uLmin) const
     return (freqByte == 0) ? 1 : freqByte;
 }
 
+// Pump index helpers — circuit layout:
+//   Circuit 0 (UI circuit 1): pump 0 = fluid (pump 1), pump 1 = bubble (pump 2)
+//   Circuit 1 (UI circuit 2): pump 2 = fluid (pump 3), pump 3 = bubble (pump 4)
+static inline int fluid_Pump(int circuitIdx)  { return circuitIdx * 2; }
+static inline int bubble_Pump(int circuitIdx) { return circuitIdx * 2 + 1; }
+
 void Microfluidics::stop_Circuit_Pumps(int circuitIdx)
 {
-    // circuitIdx 0 → pumps 0,2 (fluid=0, air=2)
-    // circuitIdx 1 → pumps 1,3 (fluid=1, air=3)
-    queue_Pump_Voltage(circuitIdx, 0);
-    queue_Pump_Voltage(circuitIdx + 2, 0);
+    queue_Pump_Voltage(fluid_Pump(circuitIdx),  0);
+    queue_Pump_Voltage(bubble_Pump(circuitIdx), 0);
 }
 
-void Microfluidics::run_Circuit_Pumps(int circuitIdx)
+// ---------------------------------------------------------------------------
+// PID — feedforward + PI correction; runs at PID_INTERVAL_MS cadence.
+// Reads the flow sensor for this circuit, updates _lastFlowReading, and
+// writes a new outputFreqByte into _pid[circuitIdx].
+// ---------------------------------------------------------------------------
+void Microfluidics::update_Fluid_Pump_Pid(int circuitIdx)
 {
-    uint8_t freqByte = flow_Rate_To_Freq_Byte(_config[circuitIdx].flowRate_uLmin);
-    int fluidPump = circuitIdx;
-    int airPump = circuitIdx + 2;
+    unsigned long now = millis();
+    PidState &pid = _pid[circuitIdx];
 
-    queue_Pump_Freq_Byte(fluidPump, freqByte);
-    queue_Pump_Voltage(fluidPump, 200);
-    queue_Pump_Freq_Byte(airPump, freqByte);
-    queue_Pump_Voltage(airPump, 200);
+    if (pid.lastMs != 0 && (now - pid.lastMs) < PID_INTERVAL_MS)
+        return; // Not time yet — keep using previous output
+
+    float dt = (pid.lastMs == 0) ? (PID_INTERVAL_MS / 1000.0f)
+                                 : (now - pid.lastMs) / 1000.0f;
+    pid.lastMs = now;
+
+    // Sample flow sensor (circuit 0 → sensor 1, circuit 1 → sensor 2)
+    float measured = read_Flow_Rate(circuitIdx + 1);
+    _lastFlowReading[circuitIdx] = measured;
+
+    float setpoint = _config[circuitIdx].flowRate_uLmin;
+    float error    = setpoint - measured;
+
+    // Feedforward gives a calibrated initial operating point; PI trims the error
+    float ff = (float)flow_Rate_To_Freq_Byte(setpoint);
+
+    float newIntegral = pid.integral + error * dt;
+    float rawOutput   = ff + PID_KP * error + PID_KI * newIntegral;
+
+    float maxByte = FREQ_MAX_HZ / HZ_PER_BIT;
+    float clamped = constrain(rawOutput, 1.0f, maxByte);
+
+    // Anti-windup: freeze integral when output saturates against the error direction
+    if (clamped == rawOutput)
+        pid.integral = newIntegral;
+
+    pid.prevError      = error;
+    pid.outputFreqByte = clamped;
 }
 
 void Microfluidics::apply_Circuit_Continuous(int circuitIdx)
 {
-    run_Circuit_Pumps(circuitIdx);
+    update_Fluid_Pump_Pid(circuitIdx);
+
+    uint8_t fluidFreq = (uint8_t)_pid[circuitIdx].outputFreqByte;
+
+    // Fluid pump: PID-controlled frequency + fixed voltage
+    queue_Pump_Freq_Byte(fluid_Pump(circuitIdx),  fluidFreq);
+    queue_Pump_Voltage  (fluid_Pump(circuitIdx),  FLUID_VOLTAGE);
+
+    // Bubble-removal pump: fixed frequency/voltage whenever fluid pump is running
+    queue_Pump_Freq_Byte(bubble_Pump(circuitIdx), BUBBLE_FREQ_BYTE);
+    queue_Pump_Voltage  (bubble_Pump(circuitIdx), BUBBLE_VOLTAGE);
 }
 
 void Microfluidics::apply_Circuit_Pulsed(int circuitIdx)
 {
     const PumpConfig &cfg = _config[circuitIdx];
 
-    // Infinite when cycles == 0; otherwise stop once all cycles complete
+    // Infinite when cycles == 0; stop once all cycles complete
     if (cfg.cycles > 0 && _cycleCount[circuitIdx] >= cfg.cycles)
     {
         stop_Circuit_Pumps(circuitIdx);
         return;
     }
 
-    unsigned long now = millis();
+    unsigned long now     = millis();
     unsigned long elapsed = now - _lastCycleTime[circuitIdx];
-    unsigned long feedMs = (unsigned long)(cfg.feedTime_s * 1000.0f);
+    unsigned long feedMs  = (unsigned long)(cfg.feedTime_s  * 1000.0f);
     unsigned long cycleMs = feedMs + (unsigned long)(cfg.pauseTime_s * 1000.0f);
 
     if (elapsed >= cycleMs)
@@ -231,9 +276,9 @@ void Microfluidics::apply_Circuit_Pulsed(int circuitIdx)
     }
 
     if (elapsed < feedMs)
-        run_Circuit_Pumps(circuitIdx); // Feed phase
+        apply_Circuit_Continuous(circuitIdx); // Feed phase — PID active
     else
-        stop_Circuit_Pumps(circuitIdx); // Pause phase
+        stop_Circuit_Pumps(circuitIdx);       // Pause phase — both pumps off
 }
 
 // ---------------------------------------------------------------------------
@@ -254,9 +299,18 @@ void Microfluidics::set_Circuit_Config(int circuit, const PumpConfig &config)
     if (circuit < 1 || circuit > NUM_CIRCUITS)
         return;
     int idx = circuit - 1;
-    _config[idx] = config;
-    _cycleCount[idx] = 0;
+    _config[idx]       = config;
+    _cycleCount[idx]   = 0;
     _lastCycleTime[idx] = millis();
+    _pid[idx]          = PidState{}; // Reset PID so new setpoint starts fresh
+}
+
+void Microfluidics::stop_All()
+{
+    for (int i = 0; i < NUM_PUMPS; i++)
+        queue_Pump_Voltage(i, 0);
+    for (int i = 0; i < NUM_CIRCUITS; i++)
+        _pid[i] = PidState{}; // Reset PID so next run starts clean
 }
 
 void Microfluidics::update_Pumps()
@@ -287,6 +341,13 @@ float Microfluidics::read_Flow_Rate(int sensorNum)
         return ((float)raw / 500.0f) * 1000.0f; // ml/min → µL/min
     }
     return 0.0f;
+}
+
+float Microfluidics::get_Last_Flow_Reading(int circuitNum) const
+{
+    if (circuitNum < 1 || circuitNum > NUM_CIRCUITS)
+        return 0.0f;
+    return _lastFlowReading[circuitNum - 1];
 }
 
 void Microfluidics::set_Pump_Voltage(int pumpNum, uint8_t voltage)
