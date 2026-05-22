@@ -57,6 +57,8 @@ CLR = {
     "hum2":  "#4FC3F7",
     "co2":   "#A29BFE",
     "uv":    "#FD79A8",
+    "flow1": "#00CEC9",
+    "flow2": "#6C5CE7",
 }
 
 # Chart theme palettes
@@ -201,10 +203,12 @@ class App(ctk.CTk):
 
         # pending changes flag – controls Send Data button appearance
         self._pending_changes = False
+        self._micro_closed    = False   # pre-init; overwritten by _build_micro_sheet
 
         # last values confirmed sent – None means never sent
-        self._last_sent_temp: Optional[float] = None
-        self._last_sent_led: list[Optional[tuple]] = [None] * 4
+        self._last_sent_temp: Optional[float]       = None
+        self._last_sent_led:  list[Optional[tuple]] = [None] * 4
+        self._last_sent_pump: list[Optional[tuple]] = [None, None]
 
         # CSV logging
         self._csv_lock   = threading.Lock()
@@ -578,20 +582,154 @@ class App(ctk.CTk):
 
         return fr
 
-    # ── Sheet 3: Microfluidics (placeholder) ──────────────────────────────────
+    # ── Sheet 3: Microfluidics ────────────────────────────────────────────────
     def _build_micro_sheet(self) -> ctk.CTkFrame:
         fr = ctk.CTkFrame(self._scroll, fg_color="transparent")
         fr.grid_columnconfigure(0, weight=1)
-        fr.grid_rowconfigure(0, weight=1)
 
-        inner = ctk.CTkFrame(fr, fg_color="transparent")
-        inner.grid(row=0, column=0, pady=120)
-        ctk.CTkLabel(inner, text="Microfluidics Control",
-                     font=ctk.CTkFont(size=28, weight="bold"),
-                     text_color=("gray48", "gray58")).pack()
-        ctk.CTkLabel(inner, text="Coming soon",
-                     font=ctk.CTkFont(size=13),
-                     text_color=("gray62", "gray48")).pack(pady=10)
+        ctk.CTkLabel(fr, text="Microfluidics Control",
+                     font=ctk.CTkFont(size=18, weight="bold")).grid(
+            row=0, column=0, padx=20, pady=(18, 6), sticky="w")
+
+        # ── Status buttons ────────────────────────────────────────────────────
+        btn_row = ctk.CTkFrame(fr, fg_color="transparent")
+        btn_row.grid(row=1, column=0, padx=20, pady=(0, 14), sticky="w")
+
+        self._micro_incubator_btn = ctk.CTkButton(
+            btn_row,
+            text="Incubator Opened",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color="#c0392b", hover_color="#a93226",
+            text_color="white", width=220, height=40, corner_radius=8,
+            command=self._toggle_incubator,
+        )
+        self._micro_incubator_btn.grid(row=0, column=0, padx=(0, 10))
+
+        self._micro_closed = False
+        self._micro_btn = ctk.CTkButton(
+            btn_row,
+            text="Microfluidics Opened",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color="#c0392b", hover_color="#a93226",
+            text_color="white", width=220, height=40, corner_radius=8,
+            command=self._toggle_micro,
+        )
+        self._micro_btn.grid(row=0, column=1)
+
+        # ── Flow sensors row ──────────────────────────────────────────────────
+        flow_row = ctk.CTkFrame(fr, fg_color="transparent")
+        flow_row.grid(row=2, column=0, padx=20, pady=(0, 10), sticky="ew")
+        flow_row.grid_columnconfigure(0, weight=1)
+        flow_row.grid_columnconfigure(1, weight=0)
+
+        flow_plot = ctk.CTkFrame(flow_row, corner_radius=12)
+        flow_plot.grid(row=0, column=0, padx=(0, 6), sticky="ew")
+        ctk.CTkLabel(flow_plot, text="Flow Rate (µL/min)",
+                     font=ctk.CTkFont(size=12, weight="bold")).pack(
+            anchor="w", padx=12, pady=(10, 4))
+        self._flow_fig, self._flow_ax = _make_fig(2.8)
+        self._flow_canvas = FigureCanvasTkAgg(self._flow_fig, master=flow_plot)
+        self._flow_canvas.draw()
+        self._flow_canvas.get_tk_widget().pack(fill="x", padx=8, pady=(0, 10))
+
+        info_flow = ctk.CTkFrame(flow_row, width=196, corner_radius=12)
+        info_flow.grid(row=0, column=1, sticky="ns")
+        info_flow.pack_propagate(False)
+
+        ctk.CTkLabel(info_flow, text="Flow Circuit 1",
+                     font=ctk.CTkFont(size=13, weight="bold")).pack(pady=(20, 2))
+        self._flow1_val = ctk.CTkLabel(
+            info_flow, text="—",
+            font=ctk.CTkFont(size=36, weight="bold"),
+            text_color=CLR["flow1"],
+        )
+        self._flow1_val.pack()
+        ctk.CTkLabel(info_flow, text="µL/min", font=ctk.CTkFont(size=10),
+                     text_color=("gray55", "gray55")).pack(pady=(2, 10))
+
+        ctk.CTkFrame(info_flow, height=1, fg_color=("gray72", "gray28")).pack(fill="x", padx=14)
+
+        ctk.CTkLabel(info_flow, text="Flow Circuit 2",
+                     font=ctk.CTkFont(size=13, weight="bold")).pack(pady=(10, 2))
+        self._flow2_val = ctk.CTkLabel(
+            info_flow, text="—",
+            font=ctk.CTkFont(size=36, weight="bold"),
+            text_color=CLR["flow2"],
+        )
+        self._flow2_val.pack()
+        ctk.CTkLabel(info_flow, text="µL/min", font=ctk.CTkFont(size=10),
+                     text_color=("gray55", "gray55")).pack(pady=(2, 20))
+
+        # ── Pump configuration ────────────────────────────────────────────────
+        pumps_row = ctk.CTkFrame(fr, fg_color="transparent")
+        pumps_row.grid(row=3, column=0, padx=20, pady=(0, 20), sticky="ew")
+        pumps_row.grid_columnconfigure(0, weight=1)
+        pumps_row.grid_columnconfigure(1, weight=1)
+
+        self._pump_mode_vars = []
+        self._pump_frames    = []
+        self._pump_vars      = []   # [{flow, volume, feed, pause}, ...]
+
+        for i in range(2):
+            pump_card = ctk.CTkFrame(pumps_row, corner_radius=12)
+            pump_card.grid(row=0, column=i, padx=4, pady=4, sticky="nsew")
+
+            ctk.CTkLabel(pump_card, text=f"Pump {i + 1}",
+                         font=ctk.CTkFont(size=14, weight="bold")).pack(
+                anchor="w", padx=14, pady=(12, 8))
+
+            mode_var = ctk.StringVar(value="Continuous")
+            self._pump_mode_vars.append(mode_var)
+
+            ctk.CTkSegmentedButton(
+                pump_card,
+                values=["Continuous", "Pulsed"],
+                variable=mode_var,
+                command=lambda val, idx=i: self._on_pump_mode_change(idx, val),
+            ).pack(fill="x", padx=14, pady=(0, 10))
+
+            # Numeric-only StringVars for every entry field in this pump
+            sv_flow   = self._num_var()
+            sv_volume = self._num_var()
+            sv_feed   = self._num_var()
+            sv_pause  = self._num_var()
+            self._pump_vars.append(
+                {"flow": sv_flow, "volume": sv_volume, "feed": sv_feed, "pause": sv_pause}
+            )
+
+            # Continuous frame
+            cont_frame = ctk.CTkFrame(pump_card, fg_color="transparent")
+            cont_inner = ctk.CTkFrame(cont_frame, fg_color="transparent")
+            cont_inner.pack(fill="x", padx=14, pady=(0, 14))
+            ctk.CTkLabel(cont_inner, text="Flow Rate:",
+                         font=ctk.CTkFont(size=12), width=90, anchor="w").pack(side="left")
+            ctk.CTkEntry(cont_inner, width=90, placeholder_text="0 – 2000",
+                         textvariable=sv_flow).pack(side="left", padx=(4, 4))
+            ctk.CTkLabel(cont_inner, text="µL/min",
+                         font=ctk.CTkFont(size=11),
+                         text_color=("gray55", "gray55")).pack(side="left")
+
+            # Pulsed frame
+            pulsed_frame = ctk.CTkFrame(pump_card, fg_color="transparent")
+            for lbl_txt, ph_txt, unit_txt, sv in [
+                ("Volume:",           "µL", "µL", sv_volume),
+                ("Feeding time:",     "s",  "s",  sv_feed),
+                ("Non-feeding time:", "s",  "s",  sv_pause),
+            ]:
+                pf_row = ctk.CTkFrame(pulsed_frame, fg_color="transparent")
+                pf_row.pack(fill="x", padx=14, pady=(0, 6))
+                ctk.CTkLabel(pf_row, text=lbl_txt,
+                             font=ctk.CTkFont(size=12), width=138, anchor="w").pack(side="left")
+                ctk.CTkEntry(pf_row, width=80, placeholder_text=ph_txt,
+                             textvariable=sv).pack(side="left", padx=(4, 4))
+                ctk.CTkLabel(pf_row, text=unit_txt,
+                             font=ctk.CTkFont(size=11),
+                             text_color=("gray55", "gray55")).pack(side="left")
+            ctk.CTkFrame(pulsed_frame, height=8, fg_color="transparent").pack()
+
+            self._pump_frames.append((cont_frame, pulsed_frame))
+            cont_frame.pack(fill="x")  # continuous shown by default
+
         return fr
 
     # ── card factory ──────────────────────────────────────────────────────────
@@ -614,6 +752,7 @@ class App(ctk.CTk):
                 sh.grid_remove()
         self._active = index
         self._highlight_tab()
+        self._update_send_btn()
 
     def _highlight_tab(self) -> None:
         for i, b in enumerate(self._tab_btns):
@@ -626,23 +765,13 @@ class App(ctk.CTk):
     def _toggle_incubator(self) -> None:
         self._incubator_closed = not self._incubator_closed
         if self._incubator_closed:
-            self._incubator_btn.configure(
-                text="Incubator Closed",
-                fg_color="#1e8449",
-                hover_color="#196f3d",
-            )
-            # restore Send Data to its correct state
-            if self._pending_changes:
-                self._send_btn.configure(state="normal", fg_color=_SEND_READY, hover_color=_SEND_READY_HOVER)
-            else:
-                self._send_btn.configure(state="normal", fg_color=_SEND_IDLE, hover_color=_SEND_IDLE_HOVER)
+            btn_kw = dict(text="Incubator Closed", fg_color="#1e8449", hover_color="#196f3d")
         else:
-            self._incubator_btn.configure(
-                text="Incubator Opened",
-                fg_color="#c0392b",
-                hover_color="#a93226",
-            )
-            self._send_btn.configure(state="disabled", fg_color=_SEND_IDLE, hover_color=_SEND_IDLE_HOVER)
+            btn_kw = dict(text="Incubator Opened", fg_color="#c0392b", hover_color="#a93226")
+        self._incubator_btn.configure(**btn_kw)
+        if hasattr(self, "_micro_incubator_btn"):
+            self._micro_incubator_btn.configure(**btn_kw)
+        self._update_send_btn()
         self._ws.send(f"SET_INCUBATOR:{1 if self._incubator_closed else 0}")
 
     # ── CSV logging ───────────────────────────────────────────────────────────
@@ -722,12 +851,20 @@ class App(ctk.CTk):
     # ── control-change tracking ───────────────────────────────────────────────
     def _on_ctrl_change(self, *_) -> None:
         self._pending_changes = True
-        self._send_btn.configure(fg_color=_SEND_READY, hover_color=_SEND_READY_HOVER)
+        self._update_send_btn()
 
     # ── send data directly ────────────────────────────────────────────────────
     def _send_data(self) -> None:
         if not self._ws.connected:
             return
+        if self._active == 2:
+            self._send_pump_data()
+        else:
+            self._send_incubator_data()
+        self._pending_changes = False
+        self._update_send_btn()
+
+    def _send_incubator_data(self) -> None:
         cur_temp = round(self._temp_set_var.get(), 1)
         if cur_temp != self._last_sent_temp:
             self._ws.send(f"SET_TEMP:{cur_temp:.1f}")
@@ -737,8 +874,22 @@ class App(ctk.CTk):
             if state != self._last_sent_led[i]:
                 self._ws.send(f"SET_LED:{i + 1}:{int(state[0])}:{state[1]}")
                 self._last_sent_led[i] = state
-        self._pending_changes = False
-        self._send_btn.configure(fg_color=_SEND_IDLE, hover_color=_SEND_IDLE_HOVER)
+
+    def _send_pump_data(self) -> None:
+        for i, pvars in enumerate(self._pump_vars):
+            is_pulsed = 1 if self._pump_mode_vars[i].get() == "Pulsed" else 0
+            if is_pulsed:
+                flow = pvars["volume"].get() or "0"
+                feed  = pvars["feed"].get()   or "0"
+                pause = pvars["pause"].get()  or "0"
+            else:
+                flow  = pvars["flow"].get()   or "0"
+                feed  = "0"
+                pause = "0"
+            state = (is_pulsed, flow, feed, pause)
+            if state != self._last_sent_pump[i]:
+                self._ws.send(f"SET_PUMP:{i + 1}:{flow}:{is_pulsed}:{feed}:{pause}:0")
+                self._last_sent_pump[i] = state
 
     # ── data ingestion (called from WS thread) ────────────────────────────────
     def _ingest(self, data: dict) -> None:
@@ -854,6 +1005,65 @@ class App(ctk.CTk):
             last_irr = uv_irr[-1] if uv_irr else 0.0
             self._uvi_val.configure(text=f"{last_idx:.2f}")
             self._irr_val.configure(text=f"{last_irr:.4f}")
+
+    # ── numeric-only StringVar factory ───────────────────────────────────────
+    def _num_var(self) -> ctk.StringVar:
+        sv = ctk.StringVar()
+        _guard = [False]
+        def _cb(*_):
+            if _guard[0]:
+                return
+            raw = sv.get()
+            clean = "".join(c for c in raw if c.isdigit() or c == ".")
+            if clean.count(".") > 1:
+                second_dot = clean.index(".", clean.index(".") + 1)
+                clean = clean[:second_dot]
+            if clean != raw:
+                _guard[0] = True
+                sv.set(clean)
+                _guard[0] = False
+            self._on_ctrl_change()
+        sv.trace_add("write", _cb)
+        return sv
+
+    # ── send-button state (shared by all tabs) ────────────────────────────────
+    def _update_send_btn(self) -> None:
+        gate = self._micro_closed if self._active == 2 else self._incubator_closed
+        if not gate:
+            self._send_btn.configure(state="disabled",
+                                     fg_color=_SEND_IDLE, hover_color=_SEND_IDLE_HOVER)
+        elif self._pending_changes:
+            self._send_btn.configure(state="normal",
+                                     fg_color=_SEND_READY, hover_color=_SEND_READY_HOVER)
+        else:
+            self._send_btn.configure(state="normal",
+                                     fg_color=_SEND_IDLE, hover_color=_SEND_IDLE_HOVER)
+
+    # ── microfluidics safety toggle ───────────────────────────────────────────
+    def _toggle_micro(self) -> None:
+        self._micro_closed = not self._micro_closed
+        if self._micro_closed:
+            self._micro_btn.configure(
+                text="Microfluidics Closed",
+                fg_color="#1e8449", hover_color="#196f3d",
+            )
+        else:
+            self._micro_btn.configure(
+                text="Microfluidics Opened",
+                fg_color="#c0392b", hover_color="#a93226",
+            )
+        self._update_send_btn()
+
+    # ── pump mode toggle ──────────────────────────────────────────────────────
+    def _on_pump_mode_change(self, pump_idx: int, mode: str) -> None:
+        cont_frame, pulsed_frame = self._pump_frames[pump_idx]
+        if mode == "Continuous":
+            pulsed_frame.pack_forget()
+            cont_frame.pack(fill="x")
+        else:
+            cont_frame.pack_forget()
+            pulsed_frame.pack(fill="x")
+        self._on_ctrl_change()
 
     # ── theme toggle ──────────────────────────────────────────────────────────
     def _toggle_theme(self) -> None:
