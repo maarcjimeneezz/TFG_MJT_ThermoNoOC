@@ -11,8 +11,7 @@ Incubator::Incubator()
       co2Percent(0.0f),
       targetTemperature(20.0f),
       _integral(0.0f), _prevError(0.0f), _filteredDeriv(0.0f),
-      _rampedTarget(20.0f), _lastHeaterMs(0),
-      _itoPhase(ITOPhase::HEATING), _itoPhaseStartMs(0), _itoOnAccumMs(0) {}
+      _rampedTarget(20.0f), _lastHeaterMs(0) {}
 
 // ---------------------------------------------------------------------------
 // Private helpers
@@ -125,9 +124,6 @@ void Incubator::begin()
     _prevError = 0.0f;
     _filteredDeriv = 0.0f;
     _lastHeaterMs = millis();
-    _itoPhase = ITOPhase::HEATING;
-    _itoPhaseStartMs = millis();
-    _itoOnAccumMs = 0;
 
     select_Sensor_Bus(MUX_CH_TEMP1);
     delay(50); // SHT35 power-on stabilisation (datasheet min: 1 ms; 50 ms for safety margin)
@@ -204,34 +200,6 @@ void Incubator::update_Heater_PWM()
 
     float output = ITO_KP * error + ITO_KI * _integral + ITO_KD * _filteredDeriv;
     uint8_t pwm = (uint8_t)constrain((int)output, 0, ITO_PWM_MAX);
-
-    // Forced cooling cycle — if the glass has been on for ITO_MAX_ON_MS, force it
-    // off for ITO_MIN_OFF_MS regardless of PID output.
-    if (_itoPhase == ITOPhase::FORCED_COOL)
-    {
-        if (now - _itoPhaseStartMs >= ITO_MIN_OFF_MS)
-        {
-            _itoPhase = ITOPhase::HEATING;
-            _itoOnAccumMs = 0;
-        }
-        else
-        {
-            set_ITO_Power(0);
-            return;
-        }
-    }
-
-    if (pwm > 0)
-    {
-        _itoOnAccumMs += (unsigned long)(dt * 1000.0f);
-        if (_itoOnAccumMs >= ITO_MAX_ON_MS)
-        {
-            _itoPhase = ITOPhase::FORCED_COOL;
-            _itoPhaseStartMs = now;
-            set_ITO_Power(0);
-            return;
-        }
-    }
 
     set_ITO_Power(pwm);
 }
