@@ -318,6 +318,7 @@ void Microfluidics::begin()
         init_Single_Pump(i);
     for (int i = 0; i < NUM_SENSORS; i++)
         init_Single_Flow_Sensor(i);
+    delay(60); // SLF3S-0600F: 60 ms warm-up after start continuous measurement
 }
 
 void Microfluidics::set_Circuit_Config(int circuit, const PumpConfig &config)
@@ -364,7 +365,7 @@ float Microfluidics::read_Flow_Rate(int sensorNum)
     {
         int16_t raw = (Wire.read() << 8) | Wire.read();
         Wire.read();                            // discard CRC
-        return ((float)raw / 500.0f) * 1000.0f; // ml/min → µL/min
+        return (float)raw / 10.0f; // SLF3S-0600F: scale factor 10 LSB/(µL/min)
     }
     return 0.0f;
 }
