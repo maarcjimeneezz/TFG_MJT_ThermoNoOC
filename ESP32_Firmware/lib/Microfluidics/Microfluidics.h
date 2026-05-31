@@ -48,8 +48,7 @@ private:
     static const uint8_t PUMP_MUX_CH[NUM_PUMPS]; // Defined in .cpp
     static const uint8_t FLOW_MUX_CH[NUM_SENSORS];
 
-    // Flow rate → pump frequency mapping (0-2000 µL/min → 8-800 Hz)
-    static constexpr float FLOW_TO_HZ = 2.5f;
+    // Flow rate → pump frequency mapping via manufacturer LUT (10–100 Hz at 100 Vpp)
     static const uint16_t FREQ_MIN_HZ = 8;
     static const uint16_t FREQ_MAX_HZ = 800;
     // mp-Lowdriver frequency register: 1 LSB = 7.8125 Hz
@@ -58,30 +57,30 @@ private:
     static const unsigned long PUMP_SETTLE_MS = 5;
 
     // PID feedback — feedforward + PI correction on fluid pump frequency
-    static constexpr float    PID_KP           = 0.003f; // freqByte / (µL/min)
-    static constexpr float    PID_KI           = 0.001f; // freqByte / (µL/min·s)
-    static const unsigned long PID_INTERVAL_MS = 100;    // Sample period
+    static constexpr float PID_KP = 0.003f;           // freqByte / (µL/min)
+    static constexpr float PID_KI = 0.001f;           // freqByte / (µL/min·s)
+    static const unsigned long PID_INTERVAL_MS = 100; // Sample period
 
     // Fixed operating point for bubble-removal pumps (run whenever fluid pump is active)
-    static const uint8_t BUBBLE_FREQ_BYTE = 20;  // ≈ 156 Hz
-    static const uint8_t BUBBLE_VOLTAGE   = 180; // ≈ 106 Vpp
-    static const uint8_t FLUID_VOLTAGE    = 200; // ≈ 118 Vpp
+    static const uint8_t BUBBLE_FREQ_BYTE = 20; // ≈ 156 Hz
+    static const uint8_t BUBBLE_VOLTAGE = 180;  // ≈ 106 Vpp
+    static const uint8_t FLUID_VOLTAGE = 200;   // ≈ 118 Vpp
 
     // ---- Per-circuit state ----
-    PumpConfig    _config[NUM_CIRCUITS];
+    PumpConfig _config[NUM_CIRCUITS];
     unsigned long _lastCycleTime[NUM_CIRCUITS];
-    int           _cycleCount[NUM_CIRCUITS];
+    int _cycleCount[NUM_CIRCUITS];
 
     // Per-circuit PID state; reset whenever set_Circuit_Config() is called
     struct PidState
     {
-        float         integral       = 0.0f;
-        float         prevError      = 0.0f;
-        unsigned long lastMs         = 0;
-        float         outputFreqByte = 1.0f; // Initialised to feedforward on first tick
+        float integral = 0.0f;
+        float prevError = 0.0f;
+        unsigned long lastMs = 0;
+        float outputFreqByte = 1.0f; // Initialised to feedforward on first tick
     };
     PidState _pid[NUM_CIRCUITS];
-    float    _lastFlowReading[NUM_CIRCUITS]; // Cached sensor value written by PID tick
+    float _lastFlowReading[NUM_CIRCUITS]; // Cached sensor value written by PID tick
 
     // ---- Non-blocking pump update state machine (one entry per physical pump) ----
     struct PumpUpdate
@@ -109,12 +108,11 @@ private:
     // ---- Pending-update queue helpers ----
     void queue_Pump_Voltage(int pumpIdx, uint8_t voltage);
     void queue_Pump_Freq_Byte(int pumpIdx, uint8_t freqByte);
-    void process_Pending_Updates();
 
     // ---- Circuit logic helpers ----
     uint8_t flow_Rate_To_Freq_Byte(float flowRate_uLmin) const;
     void stop_Circuit_Pumps(int circuitIdx);
-    void update_Fluid_Pump_Pid(int circuitIdx);  // Reads sensor, runs PID, updates _pid
+    void update_Fluid_Pump_Pid(int circuitIdx); // Reads sensor, runs PID, updates _pid
     void apply_Circuit_Continuous(int circuitIdx);
     void apply_Circuit_Pulsed(int circuitIdx);
 
@@ -151,7 +149,14 @@ public:
      */
     float get_Last_Flow_Reading(int circuitNum) const;
 
-    // Direct low-level pump control (bypasses circuit logic)
+    /**
+     * Drives the non-blocking STOP→settle→write→RESUME state machine.
+     * Use instead of update_Pumps() when you want direct pump control
+     * without the PID or circuit logic running (e.g. hardware tests).
+     */
+    void process_Pending_Updates();
+
+    // Direct low-level pump control (bypasses circuit logic and PID)
     void set_Pump_Voltage(int pumpNum, uint8_t voltage);
     void set_Pump_Frequency(int pumpNum, uint16_t frequency_Hz);
 };
