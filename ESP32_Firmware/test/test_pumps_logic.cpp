@@ -6,6 +6,10 @@
  * Calls process_Pending_Updates() instead of update_Pumps() so the
  * circuit state machine never overrides the commanded values.
  *
+ * Mirrors the production strategy: fluid pump runs at fixed 203 Hz (GAIN=3,
+ * 0–100 Vpp), amplitude byte is derived from the flow-rate LUT.
+ * Bubble-removal pump runs at fixed 156 Hz, full amplitude.
+ *
  * Circuit layout:
  *   Circuit 1 — pump 1 (fluid) + pump 3 (air bubble removal)
  *   Circuit 2 — pump 2 (fluid) + pump 4 (air bubble removal)
@@ -29,9 +33,10 @@
 #include "Microfluidics.h"
 
 // Mirror of private constants from Microfluidics.cpp
-static const uint8_t FLUID_V_BYTE = 168;  // ~100 Vpp register byte
-static const uint8_t BUBBLE_V_BYTE = 168; // ~100 Vpp register byte
-static const uint16_t BUBBLE_HZ = 156;    // BUBBLE_FREQ_BYTE(20) * 7.8125
+// Fluid pump: fixed frequency 26 × 7.8125 = 203.125 Hz, GAIN=3 (0–100 Vpp)
+static const uint16_t FLUID_FREQ_HZ = 203;  // ~26 × 7.8125 Hz
+static const uint16_t BUBBLE_FREQ_HZ = 156; // ~20 × 7.8125 Hz
+static const uint8_t BUBBLE_AMP = 168;      // ~66 Vpp at GAIN=3
 
 // Circuit-to-pump mapping
 static const int FLUID_PUMP[2] = {1, 2};  // pump 1 = C1 fluid,  pump 2 = C2 fluid
@@ -53,35 +58,41 @@ struct CircuitState
 };
 static CircuitState _state[2];
 
-static uint16_t flow_to_hz(float uLmin)
+// Same LUT as Microfluidics::flow_Rate_To_Amp_Byte — fixed 203 Hz, GAIN=3
+static uint8_t flow_to_amp_byte(float uLmin)
 {
-    // Manufacturer calibration table at 100 Vpp
-    static const float FLOW_LUT[] = {350.f, 650.f, 900.f, 1350.f, 1550.f, 1950.f, 2250.f};
-    static const float HZ_LUT[] = {10.f, 20.f, 30.f, 40.f, 50.f, 75.f, 100.f};
-    static const int N = 7;
+    static const float FLOW_LUT[] = {0.f, 200.f, 500.f, 900.f, 1400.f, 2000.f};
+    static const float AMP_LUT[] = {0.f, 80.f, 130.f, 180.f, 220.f, 255.f};
+    static const int N = 6;
 
     if (uLmin <= FLOW_LUT[0])
-        return (uint16_t)HZ_LUT[0];
+        return (uint8_t)AMP_LUT[0];
     if (uLmin >= FLOW_LUT[N - 1])
-        return (uint16_t)HZ_LUT[N - 1];
+        return (uint8_t)AMP_LUT[N - 1];
 
     for (int i = 0; i < N - 1; i++)
     {
         if (uLmin <= FLOW_LUT[i + 1])
         {
             float t = (uLmin - FLOW_LUT[i]) / (FLOW_LUT[i + 1] - FLOW_LUT[i]);
-            return (uint16_t)(HZ_LUT[i] + t * (HZ_LUT[i + 1] - HZ_LUT[i]) + 0.5f);
+            float amp = AMP_LUT[i] + t * (AMP_LUT[i + 1] - AMP_LUT[i]);
+            if (amp < 0.f)
+                amp = 0.f;
+            if (amp > 255.f)
+                amp = 255.f;
+            return (uint8_t)(amp + 0.5f);
         }
     }
-    return (uint16_t)HZ_LUT[N - 1];
+    return (uint8_t)AMP_LUT[N - 1];
 }
 
 static void start_Pumps(int idx)
 {
-    fluidics.set_Pump_Frequency(FLUID_PUMP[idx], flow_to_hz(_state[idx].flowRate));
-    fluidics.set_Pump_Voltage(FLUID_PUMP[idx], FLUID_V_BYTE);
-    fluidics.set_Pump_Frequency(BUBBLE_PUMP[idx], BUBBLE_HZ);
-    fluidics.set_Pump_Voltage(BUBBLE_PUMP[idx], BUBBLE_V_BYTE);
+    uint8_t amp = flow_to_amp_byte(_state[idx].flowRate);
+    fluidics.set_Pump_Frequency(FLUID_PUMP[idx], FLUID_FREQ_HZ);
+    fluidics.set_Pump_Voltage(FLUID_PUMP[idx], amp);
+    fluidics.set_Pump_Frequency(BUBBLE_PUMP[idx], BUBBLE_FREQ_HZ);
+    fluidics.set_Pump_Voltage(BUBBLE_PUMP[idx], BUBBLE_AMP);
 }
 
 static void stop_Pumps(int idx)
@@ -101,9 +112,9 @@ static void print_Config(int idx)
         return;
     }
     Serial.print(_state[idx].flowRate, 1);
-    Serial.print(" uL/min (");
-    Serial.print(flow_to_hz(_state[idx].flowRate));
-    Serial.print(" Hz)");
+    Serial.print(" uL/min (amp=");
+    Serial.print(flow_to_amp_byte(_state[idx].flowRate));
+    Serial.print("/255, 203 Hz fixed)");
     if (_state[idx].pulsed)
     {
         Serial.print(" | pulsed feed=");
@@ -265,9 +276,9 @@ static void handle_Command(const String &cmd)
         Serial.print(idx + 1);
         Serial.print(": ");
         Serial.print(rate, 1);
-        Serial.print(" uL/min -> ");
-        Serial.print(flow_to_hz(rate));
-        Serial.println(" Hz");
+        Serial.print(" uL/min -> amp=");
+        Serial.print(flow_to_amp_byte(rate));
+        Serial.println("/255 @ 203 Hz");
     }
 }
 
@@ -280,6 +291,7 @@ void setup_pumps_logic()
 
     Serial.println();
     Serial.println("=== CIRCUIT PUMP TEST (direct control, no PID) ===");
+    Serial.println("Fluid pump: fixed 203 Hz, amplitude from flow-rate LUT (GAIN=3, 0-100 Vpp)");
     Serial.println("c1 <uL/min>                            continuous circuit 1");
     Serial.println("c2 <uL/min>                            continuous circuit 2");
     Serial.println("c1 p <uL/min> <feed_s> <pause_s> [N]  pulsed circuit 1");

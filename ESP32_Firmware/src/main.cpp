@@ -128,7 +128,9 @@ String build_Telemetry_JSON()
     json += "\"uvW\":" + String(incubator.uvIrradiance, 4) + ",";
     json += "\"co2\":" + String(incubator.co2Percent, 4) + ",";
     json += "\"flow1\":" + String(fluidics.get_Last_Flow_Reading(1), 1) + ",";
-    json += "\"flow2\":" + String(fluidics.get_Last_Flow_Reading(2), 1);
+    json += "\"flow2\":" + String(fluidics.get_Last_Flow_Reading(2), 1) + ",";
+    json += "\"fluidTemp1\":" + String(fluidics.get_Last_Temp_Reading(1), 1) + ",";
+    json += "\"fluidTemp2\":" + String(fluidics.get_Last_Temp_Reading(2), 1);
     json += "}";
     return json;
 }

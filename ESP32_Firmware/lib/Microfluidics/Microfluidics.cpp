@@ -12,6 +12,7 @@ Microfluidics::Microfluidics()
         _lastCycleTime[i] = 0;
         _cycleCount[i] = 0;
         _lastFlowReading[i] = 0.0f;
+        _lastTempReading[i] = 0.0f;
         _pid[i] = PidState{};
     }
     for (int i = 0; i < NUM_PUMPS; i++)
@@ -93,23 +94,30 @@ void Microfluidics::init_Single_Pump(int pumpIdx)
 {
     select_Mux_Bus(PUMP_MUX_CH[pumpIdx]);
 
+    // Control registers: GAIN=3 (100 Vpp full-scale), wake device, sequence plays waveform #1
     set_Pump_Register_Page(0x00);
     Wire.beginTransmission(PUMP_I2C_ADDR);
-    Wire.write(0x01);
-    Wire.write(0x02); // Set Gain
-    Wire.write(0x00);
-    Wire.write(0x01); // Wake & play Waveform #1
+    Wire.write(0x01);  // Start at reg 0x01
+    Wire.write(0x03);  // reg 0x01: GAIN=3 → 0-100 Vpp, digital input
+    Wire.write(0x00);  // reg 0x02: STANDBY=0, GO=0 (awake, not yet playing)
+    Wire.write(0x01);  // reg 0x03: play waveform ID #1
+    Wire.write(0x00);  // reg 0x04: end of sequence
     Wire.endTransmission();
 
+    // RAM page 1: header + initial waveform synthesis packet
     set_Pump_Register_Page(0x01);
     Wire.beginTransmission(PUMP_I2C_ADDR);
-    Wire.write(0x00);
-    Wire.write(0x05); // Header
-    Wire.write(0x80);
-    Wire.write(0x06); // Start address
-    Wire.write(0x00);
-    Wire.write(0x09); // Stop address
-    Wire.write(0x00); // Infinite repeat
+    Wire.write(0x00);          // Start at RAM address 0x00
+    Wire.write(0x05);          // Header size (5 = last header byte index for 1 waveform)
+    Wire.write(0x80);          // Start addr upper byte: 0x80 = waveform synthesis mode
+    Wire.write(0x06);          // Start addr lower byte
+    Wire.write(0x00);          // Stop addr upper byte
+    Wire.write(0x09);          // Stop addr lower byte
+    Wire.write(0x00);          // Repeat count: 0 = infinite loop
+    Wire.write(0x00);          // 0x06: amplitude = 0 (stopped at init)
+    Wire.write(FLUID_FREQ_BYTE); // 0x07: frequency ~203 Hz
+    Wire.write(100);           // 0x08: 100 cycles per play (≈ 0.5 s at 203 Hz, repeats infinitely)
+    Wire.write(0x00);          // 0x09: no envelope
     Wire.endTransmission();
 }
 
@@ -176,38 +184,35 @@ void Microfluidics::process_Pending_Updates()
 // Circuit logic helpers
 // ---------------------------------------------------------------------------
 
-uint8_t Microfluidics::flow_Rate_To_Freq_Byte(float flowRate_uLmin) const
+uint8_t Microfluidics::flow_Rate_To_Amp_Byte(float flowRate_uLmin) const
 {
-    // Manufacturer calibration table at 100 Vpp
-    static const float FLOW_LUT[] = {350.f, 650.f, 900.f, 1350.f, 1550.f, 1950.f, 2250.f};
-    static const float HZ_LUT[] = {10.f, 20.f, 30.f, 40.f, 50.f, 75.f, 100.f};
-    static const int N = 7;
+    // Feedforward table: flow rate → amplitude byte at fixed ~203 Hz, GAIN=3 (100 Vpp).
+    // Derived from mp-Lowdriver performance data (water, 200 Hz approximation).
+    // PID integral will correct residual steady-state error.
+    static const float FLOW_LUT[] = {0.f, 200.f, 500.f, 900.f, 1400.f, 2000.f};
+    static const float AMP_LUT[]  = {0.f,  80.f, 130.f, 180.f,  220.f,  255.f};
+    static const int N = 6;
 
-    float hz;
+    float amp;
     if (flowRate_uLmin <= FLOW_LUT[0])
-    {
-        hz = HZ_LUT[0];
-    }
+        amp = AMP_LUT[0];
     else if (flowRate_uLmin >= FLOW_LUT[N - 1])
-    {
-        hz = HZ_LUT[N - 1];
-    }
+        amp = AMP_LUT[N - 1];
     else
     {
-        hz = HZ_LUT[N - 1];
+        amp = AMP_LUT[N - 1];
         for (int i = 0; i < N - 1; i++)
         {
             if (flowRate_uLmin <= FLOW_LUT[i + 1])
             {
                 float t = (flowRate_uLmin - FLOW_LUT[i]) / (FLOW_LUT[i + 1] - FLOW_LUT[i]);
-                hz = HZ_LUT[i] + t * (HZ_LUT[i + 1] - HZ_LUT[i]);
+                amp = AMP_LUT[i] + t * (AMP_LUT[i + 1] - AMP_LUT[i]);
                 break;
             }
         }
     }
 
-    uint8_t freqByte = (uint8_t)(hz / HZ_PER_BIT);
-    return (freqByte == 0) ? 1 : freqByte;
+    return (uint8_t)constrain(amp, 0.f, 255.f);
 }
 
 // Pump index helpers — circuit layout:
@@ -225,7 +230,7 @@ void Microfluidics::stop_Circuit_Pumps(int circuitIdx)
 // ---------------------------------------------------------------------------
 // PID — feedforward + PI correction; runs at PID_INTERVAL_MS cadence.
 // Reads the flow sensor for this circuit, updates _lastFlowReading, and
-// writes a new outputFreqByte into _pid[circuitIdx].
+// writes a new outputAmpByte into _pid[circuitIdx].
 // ---------------------------------------------------------------------------
 void Microfluidics::update_Fluid_Pump_Pid(int circuitIdx)
 {
@@ -246,35 +251,36 @@ void Microfluidics::update_Fluid_Pump_Pid(int circuitIdx)
     float setpoint = _config[circuitIdx].flowRate_uLmin;
     float error = setpoint - measured;
 
-    // Feedforward gives a calibrated initial operating point; PI trims the error
-    float ff = (float)flow_Rate_To_Freq_Byte(setpoint);
+    // Feedforward gives a calibrated starting amplitude; PI trims steady-state error
+    float ff = (float)flow_Rate_To_Amp_Byte(setpoint);
 
     float newIntegral = pid.integral + error * dt;
     float rawOutput = ff + PID_KP * error + PID_KI * newIntegral;
 
-    float maxByte = FREQ_MAX_HZ / HZ_PER_BIT;
-    float clamped = constrain(rawOutput, 1.0f, maxByte);
+    float clamped = constrain(rawOutput, 0.0f, 255.0f);
 
-    // Anti-windup: freeze integral when output saturates against the error direction
+    // Anti-windup: only integrate when output is not saturated
     if (clamped == rawOutput)
         pid.integral = newIntegral;
 
     pid.prevError = error;
-    pid.outputFreqByte = clamped;
+    pid.outputAmpByte = clamped;
 }
 
 void Microfluidics::apply_Circuit_Continuous(int circuitIdx)
 {
     update_Fluid_Pump_Pid(circuitIdx);
 
-    uint8_t fluidFreq = (uint8_t)_pid[circuitIdx].outputFreqByte;
-
-    // Fluid pump: only push update when change exceeds deadband (>1 bit = ~8 Hz)
-    // to avoid STOP/RESUME cycles from single-bit PID jitter
+    uint8_t fluidAmp = (uint8_t)_pid[circuitIdx].outputAmpByte;
     int fp = fluid_Pump(circuitIdx);
-    if (_curFreqByte[fp] == 0 || abs((int)fluidFreq - (int)_curFreqByte[fp]) > 1)
-        queue_Pump_Freq_Byte(fp, fluidFreq);
-    queue_Pump_Voltage(fp, FLUID_VOLTAGE);
+
+    // Frequency is fixed; queue_Pump_Freq_Byte is a no-op after the first write
+    queue_Pump_Freq_Byte(fp, FLUID_FREQ_BYTE);
+
+    // Only push amplitude update when change exceeds deadband (>1 byte ≈ 0.4 Vpp)
+    // to avoid STOP/RESUME cycles from single-bit PID jitter
+    if (_curVoltage[fp] == 0 || abs((int)fluidAmp - (int)_curVoltage[fp]) > 1)
+        queue_Pump_Voltage(fp, fluidAmp);
 
     // Bubble-removal pump: fixed frequency/voltage whenever fluid pump is running
     queue_Pump_Freq_Byte(bubble_Pump(circuitIdx), BUBBLE_FREQ_BYTE);
@@ -362,13 +368,18 @@ float Microfluidics::read_Flow_Rate(int sensorNum)
 {
     if (sensorNum < 1 || sensorNum > NUM_SENSORS)
         return 0.0f;
-    select_Mux_Bus(FLOW_MUX_CH[sensorNum - 1]);
-    Wire.requestFrom(FLOW_I2C_ADDR, (uint8_t)3);
-    if (Wire.available() >= 2)
+    int idx = sensorNum - 1;
+    select_Mux_Bus(FLOW_MUX_CH[idx]);
+    // Request 6 bytes: flow (2 + CRC) + temperature (2 + CRC)
+    Wire.requestFrom(FLOW_I2C_ADDR, (uint8_t)6);
+    if (Wire.available() >= 6)
     {
-        int16_t raw = (Wire.read() << 8) | Wire.read();
-        Wire.read();                            // discard CRC
-        return (float)raw / 10.0f; // SLF3S-0600F: scale factor 10 LSB/(µL/min)
+        int16_t flowRaw = (int16_t)((Wire.read() << 8) | Wire.read());
+        Wire.read(); // discard flow CRC
+        int16_t tempRaw = (int16_t)((Wire.read() << 8) | Wire.read());
+        Wire.read(); // discard temperature CRC
+        _lastTempReading[idx] = (float)tempRaw / 200.0f; // SLF3S-0600F: 200 LSB/°C
+        return (float)flowRaw / 10.0f;                   // SLF3S-0600F: 10 LSB/(µL/min)
     }
     return 0.0f;
 }
@@ -378,6 +389,13 @@ float Microfluidics::get_Last_Flow_Reading(int circuitNum) const
     if (circuitNum < 1 || circuitNum > NUM_CIRCUITS)
         return 0.0f;
     return _lastFlowReading[circuitNum - 1];
+}
+
+float Microfluidics::get_Last_Temp_Reading(int circuitNum) const
+{
+    if (circuitNum < 1 || circuitNum > NUM_CIRCUITS)
+        return 0.0f;
+    return _lastTempReading[circuitNum - 1];
 }
 
 void Microfluidics::set_Pump_Voltage(int pumpNum, uint8_t voltage)

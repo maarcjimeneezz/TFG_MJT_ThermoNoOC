@@ -14,8 +14,8 @@
  * flow sensor reading. No incubator sensor data, LED, fan, or WiFi logic.
  *
  * Circuit organisation:
- *   Circuit 1 — pump 1 (fluid) + pump 2 (air bubble removal)
- *   Circuit 2 — pump 3 (fluid) + pump 4 (air bubble removal)
+ *   Circuit 1 — pump 1 (fluid) + pump 3 (air bubble removal)
+ *   Circuit 2 — pump 2 (fluid) + pump 4 (air bubble removal)
  *
  * Non-blocking pump updates:
  *   The mp-Lowdriver requires a STOP → [5 ms settle] → write → RESUME sequence
@@ -56,15 +56,19 @@ private:
     // Required settle time between STOP and parameter write (mp-Lowdriver datasheet)
     static const unsigned long PUMP_SETTLE_MS = 5;
 
-    // PID feedback — feedforward + PI correction on fluid pump frequency
-    static constexpr float PID_KP = 0.003f;           // freqByte / (µL/min)
-    static constexpr float PID_KI = 0.001f;           // freqByte / (µL/min·s)
+    // PID feedback — feedforward + PI correction on fluid pump amplitude.
+    // Frequency is fixed at FLUID_FREQ_BYTE; amplitude byte (0-255 → 0-100 Vpp, GAIN=3)
+    // is the PID control variable.
+    static constexpr float PID_KP = 0.08f;            // ampByte / (µL/min)
+    static constexpr float PID_KI = 0.005f;           // ampByte / (µL/min·s)
     static const unsigned long PID_INTERVAL_MS = 100; // Sample period
+
+    // Fixed frequency for fluid pumps: 26 × 7.8125 Hz = 203.125 Hz
+    static const uint8_t FLUID_FREQ_BYTE = 26;
 
     // Fixed operating point for bubble-removal pumps (run whenever fluid pump is active)
     static const uint8_t BUBBLE_FREQ_BYTE = 20; // ≈ 156 Hz
     static const uint8_t BUBBLE_VOLTAGE = 168;  // ≈ 100 Vpp
-    static const uint8_t FLUID_VOLTAGE = 168;   // ≈ 100 Vpp
 
     // ---- Per-circuit state ----
     PumpConfig _config[NUM_CIRCUITS];
@@ -77,10 +81,11 @@ private:
         float integral = 0.0f;
         float prevError = 0.0f;
         unsigned long lastMs = 0;
-        float outputFreqByte = 1.0f; // Initialised to feedforward on first tick
+        float outputAmpByte = 1.0f; // Amplitude byte [0-255]; updated by PID tick
     };
     PidState _pid[NUM_CIRCUITS];
     float _lastFlowReading[NUM_CIRCUITS]; // Cached sensor value written by PID tick
+    float _lastTempReading[NUM_CIRCUITS]; // Cached liquid temperature written by read_Flow_Rate
 
     // ---- Non-blocking pump update state machine (one entry per physical pump) ----
     struct PumpUpdate
@@ -110,7 +115,7 @@ private:
     void queue_Pump_Freq_Byte(int pumpIdx, uint8_t freqByte);
 
     // ---- Circuit logic helpers ----
-    uint8_t flow_Rate_To_Freq_Byte(float flowRate_uLmin) const;
+    uint8_t flow_Rate_To_Amp_Byte(float flowRate_uLmin) const;
     void stop_Circuit_Pumps(int circuitIdx);
     void update_Fluid_Pump_Pid(int circuitIdx); // Reads sensor, runs PID, updates _pid
     void apply_Circuit_Continuous(int circuitIdx);
@@ -140,7 +145,10 @@ public:
      */
     void stop_All();
 
-    /** Reads flow rate from sensor 1 or 2 via I2C. Returns µL/min. */
+    /**
+     * Reads flow rate from sensor 1 or 2 via I2C. Returns µL/min.
+     * Also caches the liquid temperature (accessible via get_Last_Temp_Reading).
+     */
     float read_Flow_Rate(int sensorNum);
 
     /**
@@ -148,6 +156,12 @@ public:
      * Use this in telemetry to avoid a redundant I2C transaction.
      */
     float get_Last_Flow_Reading(int circuitNum) const;
+
+    /**
+     * Returns the liquid temperature (°C) cached during the last read_Flow_Rate
+     * call for circuit 1 or 2. Scale factor from SLF3S-0600F datasheet: 200 LSB/°C.
+     */
+    float get_Last_Temp_Reading(int circuitNum) const;
 
     /**
      * Drives the non-blocking STOP→settle→write→RESUME state machine.
