@@ -57,8 +57,10 @@ CLR = {
     "hum2":  "#4FC3F7",
     "co2":   "#A29BFE",
     "uv":    "#FD79A8",
-    "flow1": "#00CEC9",
-    "flow2": "#6C5CE7",
+    "flow1":      "#00CEC9",
+    "flow2":      "#6C5CE7",
+    "fluidTemp1": "#74B9FF",
+    "fluidTemp2": "#FDCB6E",
 }
 
 # Chart theme palettes
@@ -192,7 +194,7 @@ class App(ctk.CTk):
         )
         self._bufs: dict[str, deque] = {
             k: deque([0.0] * BUFFER_LEN, maxlen=BUFFER_LEN)
-            for k in ("temp1", "temp2", "hum1", "hum2", "co2", "uv_irr", "uv_idx", "flow1", "flow2")
+            for k in ("temp1", "temp2", "hum1", "hum2", "co2", "uv_irr", "uv_idx", "flow1", "flow2", "fluidTemp1", "fluidTemp2")
         }
 
         # websocket
@@ -611,6 +613,7 @@ class App(ctk.CTk):
         flow_row.grid(row=2, column=0, padx=20, pady=(0, 10), sticky="ew")
         flow_row.grid_columnconfigure(0, weight=1)
         flow_row.grid_columnconfigure(1, weight=0)
+        flow_row.grid_columnconfigure(2, weight=0)
 
         flow_plot = ctk.CTkFrame(flow_row, corner_radius=12)
         flow_plot.grid(row=0, column=0, padx=(0, 6), sticky="ew")
@@ -648,6 +651,34 @@ class App(ctk.CTk):
         )
         self._flow2_val.pack()
         ctk.CTkLabel(info_flow, text="µL/min", font=ctk.CTkFont(size=10),
+                     text_color=("gray55", "gray55")).pack(pady=(2, 20))
+
+        info_temp_fluid = ctk.CTkFrame(flow_row, width=196, corner_radius=12)
+        info_temp_fluid.grid(row=0, column=2, padx=(6, 0), sticky="ns")
+        info_temp_fluid.pack_propagate(False)
+
+        ctk.CTkLabel(info_temp_fluid, text="Temp Circuit 1",
+                     font=ctk.CTkFont(size=13, weight="bold")).pack(pady=(20, 2))
+        self._fluidTemp1_val = ctk.CTkLabel(
+            info_temp_fluid, text="—",
+            font=ctk.CTkFont(size=36, weight="bold"),
+            text_color=CLR["fluidTemp1"],
+        )
+        self._fluidTemp1_val.pack()
+        ctk.CTkLabel(info_temp_fluid, text="°C", font=ctk.CTkFont(size=10),
+                     text_color=("gray55", "gray55")).pack(pady=(2, 10))
+
+        ctk.CTkFrame(info_temp_fluid, height=1, fg_color=("gray72", "gray28")).pack(fill="x", padx=14)
+
+        ctk.CTkLabel(info_temp_fluid, text="Temp Circuit 2",
+                     font=ctk.CTkFont(size=13, weight="bold")).pack(pady=(10, 2))
+        self._fluidTemp2_val = ctk.CTkLabel(
+            info_temp_fluid, text="—",
+            font=ctk.CTkFont(size=36, weight="bold"),
+            text_color=CLR["fluidTemp2"],
+        )
+        self._fluidTemp2_val.pack()
+        ctk.CTkLabel(info_temp_fluid, text="°C", font=ctk.CTkFont(size=10),
                      text_color=("gray55", "gray55")).pack(pady=(2, 20))
 
         # ── Pump configuration ────────────────────────────────────────────────
@@ -923,6 +954,8 @@ class App(ctk.CTk):
             self._bufs["uv_idx"].append(float(data.get("uvIndex", 0)))
             self._bufs["flow1"].append(float(data.get("flow1", 0)))
             self._bufs["flow2"].append(float(data.get("flow2", 0)))
+            self._bufs["fluidTemp1"].append(float(data.get("fluidTemp1", 0)))
+            self._bufs["fluidTemp2"].append(float(data.get("fluidTemp2", 0)))
 
         # redraw immediately so the plot reflects this sample without waiting for _tick
         self.after(0, self._redraw)
@@ -958,8 +991,10 @@ class App(ctk.CTk):
             co2    = list(self._bufs["co2"])
             uv_irr = list(self._bufs["uv_irr"])
             uv_idx = list(self._bufs["uv_idx"])
-            flow1  = list(self._bufs["flow1"])
-            flow2  = list(self._bufs["flow2"])
+            flow1       = list(self._bufs["flow1"])
+            flow2       = list(self._bufs["flow2"])
+            fluidTemp1  = list(self._bufs["fluidTemp1"])
+            fluidTemp2  = list(self._bufs["fluidTemp2"])
 
         pal = _pal()
 
@@ -972,6 +1007,8 @@ class App(ctk.CTk):
                 self._flow_canvas.draw_idle()
                 self._flow1_val.configure(text="—")
                 self._flow2_val.configure(text="—")
+                self._fluidTemp1_val.configure(text="—")
+                self._fluidTemp2_val.configure(text="—")
             else:
                 _draw_series(self._flow_ax, t,
                              [(flow1, "Circuit 1", CLR["flow1"]),
@@ -981,6 +1018,8 @@ class App(ctk.CTk):
                 self._flow_canvas.draw_idle()
                 self._flow1_val.configure(text=f"{flow1[-1]:.1f}" if flow1 else "—")
                 self._flow2_val.configure(text=f"{flow2[-1]:.1f}" if flow2 else "—")
+                self._fluidTemp1_val.configure(text=f"{fluidTemp1[-1]:.1f}" if fluidTemp1 else "—")
+                self._fluidTemp2_val.configure(text=f"{fluidTemp2[-1]:.1f}" if fluidTemp2 else "—")
             return
 
         # Incubator and UV tabs are gated by the incubator interlock
