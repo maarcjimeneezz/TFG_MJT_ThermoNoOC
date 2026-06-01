@@ -192,7 +192,7 @@ class App(ctk.CTk):
         )
         self._bufs: dict[str, deque] = {
             k: deque([0.0] * BUFFER_LEN, maxlen=BUFFER_LEN)
-            for k in ("temp1", "temp2", "hum1", "hum2", "co2", "uv_irr", "uv_idx")
+            for k in ("temp1", "temp2", "hum1", "hum2", "co2", "uv_irr", "uv_idx", "flow1", "flow2")
         }
 
         # websocket
@@ -591,19 +591,9 @@ class App(ctk.CTk):
                      font=ctk.CTkFont(size=18, weight="bold")).grid(
             row=0, column=0, padx=20, pady=(18, 6), sticky="w")
 
-        # ── Status buttons ────────────────────────────────────────────────────
+        # ── Status button ─────────────────────────────────────────────────────
         btn_row = ctk.CTkFrame(fr, fg_color="transparent")
         btn_row.grid(row=1, column=0, padx=20, pady=(0, 14), sticky="w")
-
-        self._micro_incubator_btn = ctk.CTkButton(
-            btn_row,
-            text="Incubator Opened",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            fg_color="#c0392b", hover_color="#a93226",
-            text_color="white", width=220, height=40, corner_radius=8,
-            command=self._toggle_incubator,
-        )
-        self._micro_incubator_btn.grid(row=0, column=0, padx=(0, 10))
 
         self._micro_closed = False
         self._micro_btn = ctk.CTkButton(
@@ -614,7 +604,7 @@ class App(ctk.CTk):
             text_color="white", width=220, height=40, corner_radius=8,
             command=self._toggle_micro,
         )
-        self._micro_btn.grid(row=0, column=1)
+        self._micro_btn.grid(row=0, column=0)
 
         # ── Flow sensors row ──────────────────────────────────────────────────
         flow_row = ctk.CTkFrame(fr, fg_color="transparent")
@@ -689,13 +679,17 @@ class App(ctk.CTk):
             ).pack(fill="x", padx=14, pady=(0, 10))
 
             # Numeric-only StringVars for every entry field in this pump
-            sv_flow   = self._num_var()
-            sv_volume = self._num_var()
-            sv_feed   = self._num_var()
-            sv_pause  = self._num_var()
-            self._pump_vars.append(
-                {"flow": sv_flow, "volume": sv_volume, "feed": sv_feed, "pause": sv_pause}
-            )
+            sv_flow        = self._num_var()
+            sv_volume      = self._num_var()
+            sv_feed        = self._num_var()
+            sv_pause       = self._num_var()
+            sv_cycles_n    = self._num_var()
+            var_cycles_inf = ctk.BooleanVar(value=True)
+            self._pump_vars.append({
+                "flow": sv_flow, "volume": sv_volume,
+                "feed": sv_feed, "pause": sv_pause,
+                "cycles_inf": var_cycles_inf, "cycles_n": sv_cycles_n,
+            })
 
             # Continuous frame
             cont_frame = ctk.CTkFrame(pump_card, fg_color="transparent")
@@ -725,6 +719,25 @@ class App(ctk.CTk):
                 ctk.CTkLabel(pf_row, text=unit_txt,
                              font=ctk.CTkFont(size=11),
                              text_color=("gray55", "gray55")).pack(side="left")
+            # Cycles row — infinite toggle + optional count entry
+            cyc_row = ctk.CTkFrame(pulsed_frame, fg_color="transparent")
+            cyc_row.pack(fill="x", padx=14, pady=(0, 6))
+            ctk.CTkLabel(cyc_row, text="Cycles:",
+                         font=ctk.CTkFont(size=12), width=138, anchor="w").pack(side="left")
+            cyc_n_entry = ctk.CTkEntry(cyc_row, width=80, placeholder_text="1",
+                                       textvariable=sv_cycles_n, state="disabled")
+
+            def _cyc_toggle(inf=var_cycles_inf, entry=cyc_n_entry):
+                entry.configure(state="disabled" if inf.get() else "normal")
+                self._on_ctrl_change()
+
+            ctk.CTkSwitch(cyc_row, variable=var_cycles_inf, text="Infinite",
+                          font=ctk.CTkFont(size=11), width=44, height=22,
+                          command=_cyc_toggle).pack(side="left", padx=(0, 8))
+            cyc_n_entry.pack(side="left", padx=(4, 4))
+            ctk.CTkLabel(cyc_row, text="cycles",
+                         font=ctk.CTkFont(size=11),
+                         text_color=("gray55", "gray55")).pack(side="left")
             ctk.CTkFrame(pulsed_frame, height=8, fg_color="transparent").pack()
 
             self._pump_frames.append((cont_frame, pulsed_frame))
@@ -769,8 +782,6 @@ class App(ctk.CTk):
         else:
             btn_kw = dict(text="Incubator Opened", fg_color="#c0392b", hover_color="#a93226")
         self._incubator_btn.configure(**btn_kw)
-        if hasattr(self, "_micro_incubator_btn"):
-            self._micro_incubator_btn.configure(**btn_kw)
         self._update_send_btn()
         self._ws.send(f"SET_INCUBATOR:{1 if self._incubator_closed else 0}")
 
@@ -879,16 +890,23 @@ class App(ctk.CTk):
         for i, pvars in enumerate(self._pump_vars):
             is_pulsed = 1 if self._pump_mode_vars[i].get() == "Pulsed" else 0
             if is_pulsed:
-                flow = pvars["volume"].get() or "0"
-                feed  = pvars["feed"].get()   or "0"
-                pause = pvars["pause"].get()  or "0"
+                volume_ul = float(pvars["volume"].get() or "0")
+                feed_s    = float(pvars["feed"].get()   or "0")
+                pause_s   = float(pvars["pause"].get()  or "0")
+                # Firmware expects flow rate (µL/min); derive it from volume ÷ feed time
+                flow_rate = (volume_ul / feed_s * 60.0) if feed_s > 0.0 else 0.0
+                flow  = f"{flow_rate:.2f}"
+                feed  = f"{feed_s:.2f}"
+                pause = f"{pause_s:.2f}"
+                cycles = 0 if pvars["cycles_inf"].get() else int(pvars["cycles_n"].get() or "1")
             else:
-                flow  = pvars["flow"].get()   or "0"
-                feed  = "0"
-                pause = "0"
-            state = (is_pulsed, flow, feed, pause)
+                flow   = pvars["flow"].get() or "0"
+                feed   = "0"
+                pause  = "0"
+                cycles = 0
+            state = (is_pulsed, flow, feed, pause, cycles)
             if state != self._last_sent_pump[i]:
-                self._ws.send(f"SET_PUMP:{i + 1}:{flow}:{is_pulsed}:{feed}:{pause}:0")
+                self._ws.send(f"SET_PUMP:{i + 1}:{flow}:{is_pulsed}:{feed}:{pause}:{cycles}")
                 self._last_sent_pump[i] = state
 
     # ── data ingestion (called from WS thread) ────────────────────────────────
@@ -903,6 +921,8 @@ class App(ctk.CTk):
             self._bufs["co2"].append(  float(data.get("co2",   0)))
             self._bufs["uv_irr"].append(float(data.get("uvW",     0)))
             self._bufs["uv_idx"].append(float(data.get("uvIndex", 0)))
+            self._bufs["flow1"].append(float(data.get("flow1", 0)))
+            self._bufs["flow2"].append(float(data.get("flow2", 0)))
 
         # redraw immediately so the plot reflects this sample without waiting for _tick
         self.after(0, self._redraw)
@@ -938,10 +958,32 @@ class App(ctk.CTk):
             co2    = list(self._bufs["co2"])
             uv_irr = list(self._bufs["uv_irr"])
             uv_idx = list(self._bufs["uv_idx"])
+            flow1  = list(self._bufs["flow1"])
+            flow2  = list(self._bufs["flow2"])
 
         pal = _pal()
 
-        # Nothing drawn while incubator is open
+        # Microfluidics tab is independent of the incubator interlock
+        if self._active == 2:
+            if not self._micro_closed:
+                self._flow_ax.cla()
+                _style_ax(self._flow_ax, pal, "µL/min")
+                self._flow_fig.patch.set_facecolor(pal["bg"])
+                self._flow_canvas.draw_idle()
+                self._flow1_val.configure(text="—")
+                self._flow2_val.configure(text="—")
+            else:
+                _draw_series(self._flow_ax, t,
+                             [(flow1, "Circuit 1", CLR["flow1"]),
+                              (flow2, "Circuit 2", CLR["flow2"])],
+                             pal, ylabel="µL/min")
+                self._flow_fig.patch.set_facecolor(pal["bg"])
+                self._flow_canvas.draw_idle()
+                self._flow1_val.configure(text=f"{flow1[-1]:.1f}" if flow1 else "—")
+                self._flow2_val.configure(text=f"{flow2[-1]:.1f}" if flow2 else "—")
+            return
+
+        # Incubator and UV tabs are gated by the incubator interlock
         if not self._incubator_closed:
             if self._active == 0:
                 for ax, fig, canvas, lbl in [

@@ -154,20 +154,22 @@ void loop()
     // 1. WiFi always runs — needed to receive SET_INCUBATOR and other commands
     wifi.loop();
 
-    // 2. Safety gate: heater, LEDs, pumps and sensors are all inhibited while
-    //    the incubator lid is open to protect both the operator and the hardware.
+    // 2. Always active: fan and LEDs have no interlock requirement.
+    control.update_Fan_Speed(control.read_PCB_Temperature());
+    leds.update_All_Groups();
+
+    // 3. Incubator gate: environmental sensors and ITO heater only when lid is closed.
     if (is_Incubator_Closed)
     {
         incubator.read_All_Sensors();
         incubator.update_Heater_PWM();
-        control.update_Fan_Speed(control.read_PCB_Temperature());
-        leds.update_All_Groups();
-
-        if (is_Micro_Closed)
-            fluidics.update_Pumps();
     }
 
-    // 3. Telemetry always broadcasts so the UI reflects the current interlock state
+    // 4. Microfluidics gate: PID reads flow sensor and adjusts pump frequency every 100 ms.
+    if (is_Micro_Closed)
+        fluidics.update_Pumps();
+
+    // 5. Telemetry always broadcasts so the UI reflects the current interlock state
     unsigned long now = millis();
     if (now - lastTelemetryMs >= TELEMETRY_INTERVAL_MS)
     {
