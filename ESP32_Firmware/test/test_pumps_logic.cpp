@@ -1,60 +1,381 @@
 /**
  * @file test_pumps_logic.cpp
- * @brief Stress test: Runs all 4 pumps simultaneously and monitors flow.
- * Logic:
- * - Circuit 1: Pumps 1 (fluid) & 3 (air) at 80 Hz
- * - Circuit 2: Pumps 2 (fluid) & 4 (air) at 300 Hz
+ * @brief Circuit-level pump validation via Serial monitor.
+ *
+ * Direct pump control — bypasses PID and circuit logic entirely.
+ * Calls process_Pending_Updates() instead of update_Pumps() so the
+ * circuit state machine never overrides the commanded values.
+ *
+ * Mirrors the production strategy: fluid pump runs at fixed 203 Hz (GAIN=3,
+ * 0–100 Vpp), amplitude byte is derived from the flow-rate LUT.
+ * Bubble-removal pump runs at fixed 156 Hz, full amplitude.
+ *
+ * Circuit layout:
+ *   Circuit 1 — pump 1 (fluid) + pump 3 (air bubble removal)
+ *   Circuit 2 — pump 2 (fluid) + pump 4 (air bubble removal)
+ *
+ * Commands (newline-terminated):
+ *   c1 <uL/min>                              Continuous, circuit 1  (0 = off)
+ *   c2 <uL/min>                              Continuous, circuit 2  (0 = off)
+ *   c1 p <uL/min> <feed_s> <pause_s> [N]    Pulsed, circuit 1  (N cycles, 0 = infinite)
+ *   c2 p <uL/min> <feed_s> <pause_s> [N]    Pulsed, circuit 2
+ *   off                                      Stop all pumps
+ *   ?                                        Print current circuit configs
+ *
+ * Examples:
+ *   c1 500               -> circuit 1 continuous at 500 uL/min
+ *   c2 p 800 2.0 3.0 5   -> circuit 2: 800 uL/min, 2s on / 3s off, 5 cycles
+ *   off                  -> stop both circuits
  */
 
 #include <Arduino.h>
+#include <esp_log.h>
 #include "Microfluidics.h"
-#include "Pinout.h"
 
-Microfluidics fluidics;
+// Mirror of private constants from Microfluidics.cpp
+// Fluid pump: fixed frequency 26 × 7.8125 = 203.125 Hz, GAIN=3 (0–100 Vpp)
+static const uint16_t FLUID_FREQ_HZ = 203;  // ~26 × 7.8125 Hz
+static const uint16_t BUBBLE_FREQ_HZ = 156; // ~20 × 7.8125 Hz
+static const uint8_t BUBBLE_AMP = 168;      // ~66 Vpp at GAIN=3
+
+// Circuit-to-pump mapping
+static const int FLUID_PUMP[2] = {1, 2};  // pump 1 = C1 fluid,  pump 2 = C2 fluid
+static const int BUBBLE_PUMP[2] = {3, 4}; // pump 3 = C1 bubble, pump 4 = C2 bubble
+
+static Microfluidics fluidics;
+static String _inputBuf = "";
+
+struct CircuitState
+{
+    float flowRate = 0.0f;
+    bool pulsed = false;
+    float feedTime = 0.0f;
+    float pauseTime = 0.0f;
+    int cycles = 0;
+    int cyclesDone = 0;
+    bool inFeed = false;
+    unsigned long phaseStart = 0;
+};
+static CircuitState _state[2];
+
+// Same LUT as Microfluidics::flow_Rate_To_Amp_Byte — fixed 203 Hz, GAIN=3
+static uint8_t flow_to_amp_byte(float uLmin)
+{
+    static const float FLOW_LUT[] = {0.f, 200.f, 500.f, 900.f, 1400.f, 2000.f};
+    static const float AMP_LUT[] = {0.f, 80.f, 130.f, 180.f, 220.f, 255.f};
+    static const int N = 6;
+
+    if (uLmin <= FLOW_LUT[0])
+        return (uint8_t)AMP_LUT[0];
+    if (uLmin >= FLOW_LUT[N - 1])
+        return (uint8_t)AMP_LUT[N - 1];
+
+    for (int i = 0; i < N - 1; i++)
+    {
+        if (uLmin <= FLOW_LUT[i + 1])
+        {
+            float t = (uLmin - FLOW_LUT[i]) / (FLOW_LUT[i + 1] - FLOW_LUT[i]);
+            float amp = AMP_LUT[i] + t * (AMP_LUT[i + 1] - AMP_LUT[i]);
+            if (amp < 0.f)
+                amp = 0.f;
+            if (amp > 255.f)
+                amp = 255.f;
+            return (uint8_t)(amp + 0.5f);
+        }
+    }
+    return (uint8_t)AMP_LUT[N - 1];
+}
+
+static void start_Pumps(int idx)
+{
+    uint8_t amp = flow_to_amp_byte(_state[idx].flowRate);
+    fluidics.set_Pump_Frequency(FLUID_PUMP[idx], FLUID_FREQ_HZ);
+    fluidics.set_Pump_Voltage(FLUID_PUMP[idx], amp);
+    fluidics.set_Pump_Frequency(BUBBLE_PUMP[idx], BUBBLE_FREQ_HZ);
+    fluidics.set_Pump_Voltage(BUBBLE_PUMP[idx], BUBBLE_AMP);
+}
+
+static void stop_Pumps(int idx)
+{
+    fluidics.set_Pump_Voltage(FLUID_PUMP[idx], 0);
+    fluidics.set_Pump_Voltage(BUBBLE_PUMP[idx], 0);
+}
+
+static void print_Config(int idx)
+{
+    Serial.print("  Circuit ");
+    Serial.print(idx + 1);
+    Serial.print(": ");
+    if (_state[idx].flowRate <= 0.0f)
+    {
+        Serial.println("OFF");
+        return;
+    }
+    Serial.print(_state[idx].flowRate, 1);
+    Serial.print(" uL/min (amp=");
+    Serial.print(flow_to_amp_byte(_state[idx].flowRate));
+    Serial.print("/255, 203 Hz fixed)");
+    if (_state[idx].pulsed)
+    {
+        Serial.print(" | pulsed feed=");
+        Serial.print(_state[idx].feedTime, 1);
+        Serial.print("s pause=");
+        Serial.print(_state[idx].pauseTime, 1);
+        Serial.print("s cycles=");
+        if (_state[idx].cycles == 0)
+            Serial.print("inf");
+        else
+            Serial.print(_state[idx].cycles);
+        Serial.print(" done=");
+        Serial.print(_state[idx].cyclesDone);
+    }
+    else
+    {
+        Serial.print(" | continuous");
+    }
+    Serial.println();
+}
+
+static void handle_Command(const String &cmd)
+{
+    if (cmd == "off" || cmd == "OFF")
+    {
+        for (int i = 0; i < 2; i++)
+        {
+            _state[i] = CircuitState{};
+            stop_Pumps(i);
+        }
+        fluidics.stop_All();
+        Serial.println("All circuits stopped.");
+        return;
+    }
+
+    if (cmd == "?")
+    {
+        Serial.println("--- Status ---");
+        print_Config(0);
+        print_Config(1);
+        Serial.println("---");
+        return;
+    }
+
+    if (cmd.length() < 2 || cmd[0] != 'c' || (cmd[1] != '1' && cmd[1] != '2'))
+    {
+        Serial.println("ERR: unknown command. Type ? for help.");
+        return;
+    }
+
+    int idx = cmd[1] - '1';
+    String rest = cmd.substring(2);
+    rest.trim();
+
+    if (rest.length() == 0)
+    {
+        Serial.println("ERR: missing arguments.");
+        return;
+    }
+
+    // --- Pulsed mode: p <flowrate> <feed_s> <pause_s> [cycles] ---
+    if (rest[0] == 'p' || rest[0] == 'P')
+    {
+        rest = rest.substring(1);
+        rest.trim();
+
+        int s1 = rest.indexOf(' ');
+        if (s1 < 0)
+        {
+            Serial.println("ERR: c<N> p <uL/min> <feed_s> <pause_s> [cycles]");
+            return;
+        }
+        float rate = rest.substring(0, s1).toFloat();
+        rest = rest.substring(s1 + 1);
+        rest.trim();
+
+        int s2 = rest.indexOf(' ');
+        if (s2 < 0)
+        {
+            Serial.println("ERR: c<N> p <uL/min> <feed_s> <pause_s> [cycles]");
+            return;
+        }
+        float feed = rest.substring(0, s2).toFloat();
+        rest = rest.substring(s2 + 1);
+        rest.trim();
+
+        int s3 = rest.indexOf(' ');
+        float pause;
+        int cycles = 0;
+        if (s3 < 0)
+        {
+            pause = rest.toFloat();
+        }
+        else
+        {
+            pause = rest.substring(0, s3).toFloat();
+            cycles = rest.substring(s3 + 1).toInt();
+        }
+
+        if (rate <= 0.0f || rate > 2000.0f)
+        {
+            Serial.println("ERR: flowrate 1-2000 uL/min");
+            return;
+        }
+        if (feed <= 0.0f || pause < 0.0f)
+        {
+            Serial.println("ERR: feed_s > 0, pause_s >= 0");
+            return;
+        }
+
+        _state[idx] = CircuitState{};
+        _state[idx].flowRate = rate;
+        _state[idx].pulsed = true;
+        _state[idx].feedTime = feed;
+        _state[idx].pauseTime = pause;
+        _state[idx].cycles = cycles;
+        _state[idx].inFeed = true;
+        _state[idx].phaseStart = millis();
+        start_Pumps(idx);
+
+        Serial.print("Circuit ");
+        Serial.print(idx + 1);
+        Serial.print(" pulsed ");
+        Serial.print(rate, 1);
+        Serial.print(" uL/min, feed=");
+        Serial.print(feed, 1);
+        Serial.print("s pause=");
+        Serial.print(pause, 1);
+        Serial.print("s cycles=");
+        if (cycles == 0)
+            Serial.println("inf");
+        else
+            Serial.println(cycles);
+        return;
+    }
+
+    // --- Continuous mode: c<N> <flowrate> ---
+    float rate = rest.toFloat();
+    if (rate < 0.0f || rate > 2000.0f)
+    {
+        Serial.println("ERR: flowrate 0-2000 uL/min (0=off)");
+        return;
+    }
+
+    _state[idx] = CircuitState{};
+    _state[idx].flowRate = rate;
+
+    if (rate <= 0.0f)
+    {
+        stop_Pumps(idx);
+        Serial.print("Circuit ");
+        Serial.print(idx + 1);
+        Serial.println(": stopped.");
+    }
+    else
+    {
+        start_Pumps(idx);
+        Serial.print("Circuit ");
+        Serial.print(idx + 1);
+        Serial.print(": ");
+        Serial.print(rate, 1);
+        Serial.print(" uL/min -> amp=");
+        Serial.print(flow_to_amp_byte(rate));
+        Serial.println("/255 @ 203 Hz");
+    }
+}
 
 void setup_pumps_logic()
 {
     Serial.begin(115200);
-
-    // Initializing the I2C bus and the mp-Lowdrivers
+    esp_log_level_set("i2c.master", ESP_LOG_NONE); // suppress timeout errors when sensors absent
     fluidics.begin();
+    fluidics.stop_All();
 
-    Serial.println("=== PARALLEL PUMP STRESS TEST ===");
-    Serial.println("Action: Starting all 4 pumps... NOW.");
-
-    // START ALL PUMPS SIMULTANEOUSLY
-    // Note: The Mux switches channels fast enough that they seem to start at once.
-
-    // Liquid path
-    fluidics.set_Pump_Frequency(1, 80);
-    fluidics.set_Pump_Voltage(1, 180); // High amplitude to test power stability
-
-    fluidics.set_Pump_Frequency(3, 80);
-    fluidics.set_Pump_Voltage(3, 180);
-
-    // Air path (Bubble trap)
-    fluidics.set_Pump_Frequency(2, 300);
-    fluidics.set_Pump_Voltage(2, 220); // Air usually needs more "punch"
-
-    fluidics.set_Pump_Frequency(4, 300);
-    fluidics.set_Pump_Voltage(4, 220);
-
-    Serial.println("All pumps are running. Monitoring flow sensors...");
+    Serial.println();
+    Serial.println("=== CIRCUIT PUMP TEST (direct control, no PID) ===");
+    Serial.println("Fluid pump: fixed 203 Hz, amplitude from flow-rate LUT (GAIN=3, 0-100 Vpp)");
+    Serial.println("c1 <uL/min>                            continuous circuit 1");
+    Serial.println("c2 <uL/min>                            continuous circuit 2");
+    Serial.println("c1 p <uL/min> <feed_s> <pause_s> [N]  pulsed circuit 1");
+    Serial.println("c2 p <uL/min> <feed_s> <pause_s> [N]  pulsed circuit 2");
+    Serial.println("off                                    stop all");
+    Serial.println("?                                      status");
+    Serial.println();
+    Serial.print("> ");
 }
 
 void loop_pumps_logic()
 {
-    // Read both flow sensors while pumps are active
-    float f1 = fluidics.read_Flow_Rate(1);
-    float f2 = fluidics.read_Flow_Rate(2);
+    // Drive non-blocking STOP->settle->write->RESUME without circuit logic
+    fluidics.process_Pending_Updates();
 
-    Serial.print("Flow Readings -> Sensor 1: ");
-    Serial.print(f1);
-    Serial.print(" ml/min | Sensor 2: ");
-    Serial.print(f2);
-    Serial.println(" ml/min");
+    // Print flow sensor readings every second
+    static unsigned long lastPrint = 0;
+    if (millis() - lastPrint >= 1000)
+    {
+        lastPrint = millis();
+        float f1 = fluidics.read_Flow_Rate(1);
+        float f2 = fluidics.read_Flow_Rate(2);
+        Serial.print("[Flow] C1: ");
+        Serial.print(f1, 1);
+        Serial.print(" uL/min | C2: ");
+        Serial.print(f2, 1);
+        Serial.println(" uL/min");
+        Serial.print("> ");
+    }
 
-    // Heat check: In your TFG, mention that running all 4 pumps
-    // at max voltage is the worst-case scenario for PCB heat.
-    delay(1000);
+    // Pulsed-mode state machines
+    for (int i = 0; i < 2; i++)
+    {
+        CircuitState &s = _state[i];
+        if (!s.pulsed || s.flowRate <= 0.0f)
+            continue;
+        if (s.cycles > 0 && s.cyclesDone >= s.cycles)
+            continue;
+
+        unsigned long elapsed = millis() - s.phaseStart;
+
+        if (s.inFeed && elapsed >= (unsigned long)(s.feedTime * 1000.0f))
+        {
+            fluidics.set_Pump_Voltage(FLUID_PUMP[i], 0); // pause fluid only; air stays ON
+            s.inFeed = false;
+            s.phaseStart = millis();
+        }
+        else if (!s.inFeed && elapsed >= (unsigned long)(s.pauseTime * 1000.0f))
+        {
+            s.cyclesDone++;
+            if (s.cycles > 0 && s.cyclesDone >= s.cycles)
+            {
+                Serial.print("Circuit ");
+                Serial.print(i + 1);
+                Serial.println(": all cycles done.");
+                stop_Pumps(i);
+                s.flowRate = 0.0f;
+            }
+            else
+            {
+                start_Pumps(i);
+                s.inFeed = true;
+                s.phaseStart = millis();
+            }
+        }
+    }
+
+    // Non-blocking serial line reader
+    while (Serial.available())
+    {
+        char c = (char)Serial.read();
+        if (c == '\n' || c == '\r')
+        {
+            _inputBuf.trim();
+            if (_inputBuf.length() > 0)
+            {
+                handle_Command(_inputBuf);
+                _inputBuf = "";
+                Serial.print("> ");
+            }
+        }
+        else
+        {
+            _inputBuf += c;
+        }
+    }
 }

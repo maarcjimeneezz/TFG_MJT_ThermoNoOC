@@ -25,7 +25,19 @@ private:
     static const int ITO_FREQ_HZ = 5000;
     static const int ITO_RES_BIT = 8;
     static const int ITO_PWM_CH = 5;
-    static constexpr float ITO_KP = 10.0f; // Proportional gain for P-controller
+
+    // PID gains — tuned for dual-crystal load (2× thermal mass, same actuator)
+    static constexpr float ITO_KP             = 8.0f;
+    static constexpr float ITO_KI             = 0.1f;
+    static constexpr float ITO_KD             = 2.0f;
+    static constexpr float ITO_INTEGRAL_LIMIT = 40.0f;  // anti-windup clamp
+    static constexpr float ITO_DERIV_ALPHA    = 0.1f;   // low-pass for noisy sensor
+
+    // Hard PWM output cap — limits duty cycle to 50 % (128/255) for 60 Ω glass.
+    static const uint8_t ITO_PWM_MAX = 128;  // 50 %
+
+    // Max setpoint change rate (°C/s) — faster ramp for dual-crystal configuration
+    static constexpr float ITO_RAMP_RATE_CS = 2.0f;
 
     // LTR390 sensitivity factors for Gain=18x, Resolution=20-bit
     static constexpr float LTR390_SENSITIVITY = 2300.0f;
@@ -45,6 +57,13 @@ private:
 
     CO2State _co2State;
     unsigned long _co2CmdTime;
+
+    // PID state
+    float         _integral;
+    float         _prevError;
+    float         _filteredDeriv;
+    float         _rampedTarget;
+    unsigned long _lastHeaterMs;
 
     void select_Sensor_Bus(uint8_t muxChannel);
     void read_SHT35_Sensors();
@@ -76,7 +95,7 @@ public:
     /** Directly sets ITO glass heater duty cycle (0-255). */
     void set_ITO_Power(uint8_t power);
 
-    /** P-controller: drives ITO duty cycle toward targetTemperature. Call every loop(). */
+    /** PID controller with setpoint ramp. Drives ITO duty cycle toward targetTemperature. Call every loop(). */
     void update_Heater_PWM();
 };
 

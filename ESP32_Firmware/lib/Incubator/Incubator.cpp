@@ -9,7 +9,9 @@ Incubator::Incubator()
       temp2(0.0f), hum2(0.0f),
       uvIndex(0.0f), uvIrradiance(0.0f),
       co2Percent(0.0f),
-      targetTemperature(37.0f) {}
+      targetTemperature(20.0f),
+      _integral(0.0f), _prevError(0.0f), _filteredDeriv(0.0f),
+      _rampedTarget(20.0f), _lastHeaterMs(0) {}
 
 // ---------------------------------------------------------------------------
 // Private helpers
@@ -117,6 +119,12 @@ void Incubator::begin()
     ledcAttachPin(PIN_ITO_CONTROL, ITO_PWM_CH);
     set_ITO_Power(0);
 
+    _rampedTarget = targetTemperature;
+    _integral = 0.0f;
+    _prevError = 0.0f;
+    _filteredDeriv = 0.0f;
+    _lastHeaterMs = millis();
+
     select_Sensor_Bus(MUX_CH_TEMP1);
     delay(50); // SHT35 power-on stabilisation (datasheet min: 1 ms; 50 ms for safety margin)
     if (!_sht1.init())
@@ -161,7 +169,37 @@ void Incubator::set_ITO_Power(uint8_t power)
 
 void Incubator::update_Heater_PWM()
 {
-    float error = targetTemperature - temp2;
-    int power = constrain((int)(error * ITO_KP), 0, 255);
-    set_ITO_Power((uint8_t)power);
+    unsigned long now = millis();
+    float dt = (float)(now - _lastHeaterMs) / 1000.0f;
+    _lastHeaterMs = now;
+    // Clamp dt on the first call or after a long gap (e.g. incubator was opened)
+    if (dt <= 0.0f || dt > 2.0f)
+        dt = 0.1f;
+
+    // Ramp the active setpoint — the primary ITO glass protection:
+    // a sudden large target change is fed in gradually instead of all at once.
+    float step = ITO_RAMP_RATE_CS * dt;
+    if (targetTemperature > _rampedTarget + step)
+        _rampedTarget += step;
+    else if (targetTemperature < _rampedTarget - step)
+        _rampedTarget -= step;
+    else
+        _rampedTarget = targetTemperature;
+
+    float avgTemp = (temp1 + temp2) / 2.0f;
+    float error = _rampedTarget - avgTemp;
+
+    // Integral with anti-windup clamp
+    _integral += error * dt;
+    _integral = constrain(_integral, -ITO_INTEGRAL_LIMIT, ITO_INTEGRAL_LIMIT);
+
+    // Derivative filtered against SHT35 sensor noise
+    float rawDeriv = (error - _prevError) / dt;
+    _filteredDeriv = ITO_DERIV_ALPHA * rawDeriv + (1.0f - ITO_DERIV_ALPHA) * _filteredDeriv;
+    _prevError = error;
+
+    float output = ITO_KP * error + ITO_KI * _integral + ITO_KD * _filteredDeriv;
+    uint8_t pwm = (uint8_t)constrain((int)output, 0, ITO_PWM_MAX);
+
+    set_ITO_Power(pwm);
 }

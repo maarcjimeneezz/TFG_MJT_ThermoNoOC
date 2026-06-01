@@ -34,10 +34,20 @@ LED_Array leds;
 Microfluidics fluidics;
 
 // ---------------------------------------------------------------------------
-// Telemetry timing
+// Safety interlock — all sensor/actuator activity is gated behind this flag.
+// It is set to true only when the UI confirms the incubator lid is closed.
+// ---------------------------------------------------------------------------
+static bool is_Incubator_Closed = false;
+
+// Microfluidics interlock — pumps and flow sensors are inhibited while the
+// microfluidics circuit is open. Independent of the incubator interlock.
+static bool is_Micro_Closed = false;
+
+// ---------------------------------------------------------------------------
+// Telemetry timing — single 1 s broadcast containing all sensor data
 // ---------------------------------------------------------------------------
 static unsigned long lastTelemetryMs = 0;
-static const unsigned long TELEMETRY_INTERVAL_MS = 500;
+static const unsigned long TELEMETRY_INTERVAL_MS = 1000;
 
 // ---------------------------------------------------------------------------
 // WebSocket command handler (registered in setup, executed by WiFiManager::loop)
@@ -68,6 +78,21 @@ void on_WebSocket_Event(uint8_t clientNum, WStype_t type, uint8_t *payload, size
         leds.set_Group_Intensity(group, inten);
     }
 
+    // --- Incubator safety interlock ---
+    // Expected format: "SET_INCUBATOR:1" (closed) / "SET_INCUBATOR:0" (opened)
+    else if (msg.startsWith("SET_INCUBATOR:"))
+        is_Incubator_Closed = msg.substring(14).toInt() != 0;
+
+    // --- Microfluidics interlock ---
+    // Expected format: "SET_MICRO:1" (closed) / "SET_MICRO:0" (opened)
+    else if (msg.startsWith("SET_MICRO:"))
+    {
+        bool closed = msg.substring(10).toInt() != 0;
+        if (!closed && is_Micro_Closed)
+            fluidics.stop_All(); // Immediately kill pumps when circuit is opened
+        is_Micro_Closed = closed;
+    }
+
     // --- Pump circuit configuration ---
     // Expected format: "SET_PUMP:1:500.0:0:0:0:0"
     //   fields: circuit, flowRate_uLmin, pulsed, feedTime_s, pauseTime_s, cycles
@@ -90,13 +115,10 @@ void on_WebSocket_Event(uint8_t clientNum, WStype_t type, uint8_t *payload, size
 }
 
 // ---------------------------------------------------------------------------
-// Build telemetry JSON from each module's latest readings
+// Telemetry JSON builder — all sensor data in one 1 s broadcast
 // ---------------------------------------------------------------------------
 String build_Telemetry_JSON()
 {
-    float flow1 = fluidics.read_Flow_Rate(1);
-    float flow2 = fluidics.read_Flow_Rate(2);
-
     String json = "{";
     json += "\"temp1\":" + String(incubator.temp1, 2) + ",";
     json += "\"hum1\":" + String(incubator.hum1, 1) + ",";
@@ -105,8 +127,10 @@ String build_Telemetry_JSON()
     json += "\"uvIndex\":" + String(incubator.uvIndex, 3) + ",";
     json += "\"uvW\":" + String(incubator.uvIrradiance, 4) + ",";
     json += "\"co2\":" + String(incubator.co2Percent, 4) + ",";
-    json += "\"flow1\":" + String(flow1, 1) + ",";
-    json += "\"flow2\":" + String(flow2, 1);
+    json += "\"flow1\":" + String(fluidics.get_Last_Flow_Reading(1), 1) + ",";
+    json += "\"flow2\":" + String(fluidics.get_Last_Flow_Reading(2), 1) + ",";
+    json += "\"fluidTemp1\":" + String(fluidics.get_Last_Temp_Reading(1), 1) + ",";
+    json += "\"fluidTemp2\":" + String(fluidics.get_Last_Temp_Reading(2), 1);
     json += "}";
     return json;
 }
@@ -129,22 +153,29 @@ void setup()
 
 void loop()
 {
-    // 1. WiFi: service WebSocket heartbeats and dispatch incoming commands
+    // 1. WiFi always runs — needed to receive SET_INCUBATOR and other commands
     wifi.loop();
 
-    // 2. Incubator: non-blocking sensor poll (CO2 state machine advances here)
-    incubator.read_All_Sensors();
-
-    // 3. Actuator updates — each module drives only its own hardware
-    incubator.update_Heater_PWM();
+    // 2. Always active: fan and LEDs have no interlock requirement.
     control.update_Fan_Speed(control.read_PCB_Temperature());
     leds.update_All_Groups();
-    fluidics.update_Pumps();
 
-    // 4. Periodic telemetry broadcast
-    if (millis() - lastTelemetryMs >= TELEMETRY_INTERVAL_MS)
+    // 3. Incubator gate: environmental sensors and ITO heater only when lid is closed.
+    if (is_Incubator_Closed)
     {
-        lastTelemetryMs = millis();
+        incubator.read_All_Sensors();
+        incubator.update_Heater_PWM();
+    }
+
+    // 4. Microfluidics gate: PID reads flow sensor and adjusts pump frequency every 100 ms.
+    if (is_Micro_Closed)
+        fluidics.update_Pumps();
+
+    // 5. Telemetry always broadcasts so the UI reflects the current interlock state
+    unsigned long now = millis();
+    if (now - lastTelemetryMs >= TELEMETRY_INTERVAL_MS)
+    {
+        lastTelemetryMs = now;
         wifi.broadcast(build_Telemetry_JSON());
     }
 }
