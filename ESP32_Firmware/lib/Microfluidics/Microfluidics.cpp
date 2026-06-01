@@ -187,10 +187,10 @@ void Microfluidics::process_Pending_Updates()
 uint8_t Microfluidics::flow_Rate_To_Amp_Byte(float flowRate_uLmin) const
 {
     // Feedforward table: flow rate → amplitude byte at fixed ~203 Hz, GAIN=3 (100 Vpp).
-    // Derived from mp-Lowdriver performance data (water, 200 Hz approximation).
-    // PID integral will correct residual steady-state error.
-    static const float FLOW_LUT[] = {0.f, 200.f, 500.f, 900.f, 1400.f, 2000.f};
-    static const float AMP_LUT[]  = {0.f,  80.f, 130.f, 180.f,  220.f,  255.f};
+    // Values scaled to ~85% of full range to leave headroom for the PI trim term.
+    // If steady-state error is consistently large, re-calibrate with real pump data.
+    static const float FLOW_LUT[] = {0.f, 200.f, 500.f,  900.f, 1400.f, 2000.f};
+    static const float AMP_LUT[]  = {0.f,  68.f, 110.f,  153.f,  187.f,  217.f};
     static const int N = 6;
 
     float amp;
@@ -265,13 +265,18 @@ void Microfluidics::update_Fluid_Pump_Pid(int circuitIdx)
 
     pid.prevError = error;
     pid.outputAmpByte = clamped;
+
+    // Slew-rate limiter: prevents abrupt amplitude jumps on setpoint changes / startup
+    float delta = pid.outputAmpByte - pid.slewedAmpByte;
+    delta = constrain(delta, -PID_SLEW_BYTES_PER_TICK, PID_SLEW_BYTES_PER_TICK);
+    pid.slewedAmpByte = constrain(pid.slewedAmpByte + delta, 0.0f, 255.0f);
 }
 
 void Microfluidics::apply_Circuit_Continuous(int circuitIdx)
 {
     update_Fluid_Pump_Pid(circuitIdx);
 
-    uint8_t fluidAmp = (uint8_t)_pid[circuitIdx].outputAmpByte;
+    uint8_t fluidAmp = (uint8_t)_pid[circuitIdx].slewedAmpByte;
     int fp = fluid_Pump(circuitIdx);
 
     // Frequency is fixed; queue_Pump_Freq_Byte is a no-op after the first write
@@ -313,7 +318,10 @@ void Microfluidics::apply_Circuit_Pulsed(int circuitIdx)
     if (elapsed < feedMs)
         apply_Circuit_Continuous(circuitIdx); // Feed phase — PID active
     else
+    {
         stop_Circuit_Pumps(circuitIdx); // Pause phase — both pumps off
+        _lastFlowReading[circuitIdx] = 0.0f;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -356,7 +364,10 @@ void Microfluidics::update_Pumps()
     for (int i = 0; i < NUM_CIRCUITS; i++)
     {
         if (_config[i].flowRate_uLmin <= 0.0f)
+        {
             stop_Circuit_Pumps(i);
+            _lastFlowReading[i] = 0.0f;
+        }
         else if (_config[i].pulsed)
             apply_Circuit_Pulsed(i);
         else

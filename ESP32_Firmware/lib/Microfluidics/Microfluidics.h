@@ -59,9 +59,11 @@ private:
     // PID feedback — feedforward + PI correction on fluid pump amplitude.
     // Frequency is fixed at FLUID_FREQ_BYTE; amplitude byte (0-255 → 0-100 Vpp, GAIN=3)
     // is the PID control variable.
-    static constexpr float PID_KP = 0.08f;            // ampByte / (µL/min)
-    static constexpr float PID_KI = 0.005f;           // ampByte / (µL/min·s)
+    static constexpr float PID_KP = 0.04f;            // ampByte / (µL/min)
+    static constexpr float PID_KI = 0.025f;           // ampByte / (µL/min·s)
     static const unsigned long PID_INTERVAL_MS = 100; // Sample period
+    // Max amplitude change per PID tick — limits abrupt startup transients
+    static constexpr float PID_SLEW_BYTES_PER_TICK = 15.0f; // bytes / 100 ms → 150 bytes/s
 
     // Fixed frequency for fluid pumps: 26 × 7.8125 Hz = 203.125 Hz
     static const uint8_t FLUID_FREQ_BYTE = 26;
@@ -81,7 +83,8 @@ private:
         float integral = 0.0f;
         float prevError = 0.0f;
         unsigned long lastMs = 0;
-        float outputAmpByte = 1.0f; // Amplitude byte [0-255]; updated by PID tick
+        float outputAmpByte = 0.0f;  // Raw PID output [0-255]
+        float slewedAmpByte = 0.0f;  // Rate-limited version applied to hardware
     };
     PidState _pid[NUM_CIRCUITS];
     float _lastFlowReading[NUM_CIRCUITS]; // Cached sensor value written by PID tick
