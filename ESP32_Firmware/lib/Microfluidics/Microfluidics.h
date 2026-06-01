@@ -63,8 +63,8 @@ private:
 
     // Fixed operating point for bubble-removal pumps (run whenever fluid pump is active)
     static const uint8_t BUBBLE_FREQ_BYTE = 20; // ≈ 156 Hz
-    static const uint8_t BUBBLE_VOLTAGE = 180;  // ≈ 106 Vpp
-    static const uint8_t FLUID_VOLTAGE = 200;   // ≈ 118 Vpp
+    static const uint8_t BUBBLE_VOLTAGE = 168;  // ≈ 100 Vpp
+    static const uint8_t FLUID_VOLTAGE = 168;   // ≈ 100 Vpp
 
     // ---- Per-circuit state ----
     PumpConfig _config[NUM_CIRCUITS];

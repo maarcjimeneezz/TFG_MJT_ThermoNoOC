@@ -80,7 +80,8 @@ static void start_Pumps(int idx)
 {
     fluidics.set_Pump_Frequency(FLUID_PUMP[idx], flow_to_hz(_state[idx].flowRate));
     fluidics.set_Pump_Voltage(FLUID_PUMP[idx], FLUID_V_BYTE);
-    // Air pumps (3 & 4) intentionally off during fluid-only test
+    fluidics.set_Pump_Frequency(BUBBLE_PUMP[idx], BUBBLE_HZ);
+    fluidics.set_Pump_Voltage(BUBBLE_PUMP[idx], BUBBLE_V_BYTE);
 }
 
 static void stop_Pumps(int idx)
@@ -322,7 +323,7 @@ void loop_pumps_logic()
 
         if (s.inFeed && elapsed >= (unsigned long)(s.feedTime * 1000.0f))
         {
-            stop_Pumps(i);
+            fluidics.set_Pump_Voltage(FLUID_PUMP[i], 0); // pause fluid only; air stays ON
             s.inFeed = false;
             s.phaseStart = millis();
         }
@@ -334,6 +335,7 @@ void loop_pumps_logic()
                 Serial.print("Circuit ");
                 Serial.print(i + 1);
                 Serial.println(": all cycles done.");
+                stop_Pumps(i);
                 s.flowRate = 0.0f;
             }
             else
