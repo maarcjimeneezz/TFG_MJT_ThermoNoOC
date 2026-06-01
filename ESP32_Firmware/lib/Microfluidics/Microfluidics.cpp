@@ -269,9 +269,12 @@ void Microfluidics::apply_Circuit_Continuous(int circuitIdx)
 
     uint8_t fluidFreq = (uint8_t)_pid[circuitIdx].outputFreqByte;
 
-    // Fluid pump: PID-controlled frequency + fixed voltage
-    queue_Pump_Freq_Byte(fluid_Pump(circuitIdx), fluidFreq);
-    queue_Pump_Voltage(fluid_Pump(circuitIdx), FLUID_VOLTAGE);
+    // Fluid pump: only push update when change exceeds deadband (>1 bit = ~8 Hz)
+    // to avoid STOP/RESUME cycles from single-bit PID jitter
+    int fp = fluid_Pump(circuitIdx);
+    if (_curFreqByte[fp] == 0 || abs((int)fluidFreq - (int)_curFreqByte[fp]) > 1)
+        queue_Pump_Freq_Byte(fp, fluidFreq);
+    queue_Pump_Voltage(fp, FLUID_VOLTAGE);
 
     // Bubble-removal pump: fixed frequency/voltage whenever fluid pump is running
     queue_Pump_Freq_Byte(bubble_Pump(circuitIdx), BUBBLE_FREQ_BYTE);
