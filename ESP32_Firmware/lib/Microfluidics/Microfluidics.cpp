@@ -9,6 +9,7 @@ Microfluidics::Microfluidics()
 {
     for (int i = 0; i < NUM_CIRCUITS; i++)
     {
+        _primingActive[i] = false;
         _lastCycleTime[i] = 0;
         _cycleCount[i] = 0;
         _lastFlowReading[i] = 0.0f;
@@ -349,8 +350,33 @@ void Microfluidics::set_Circuit_Config(int circuit, const PumpConfig &config)
     _pid[idx] = PidState{}; // Reset PID so new setpoint starts fresh
 }
 
+void Microfluidics::set_Priming(int circuit, bool active)
+{
+    if (circuit < 1 || circuit > NUM_CIRCUITS)
+        return;
+    int idx = circuit - 1;
+    _primingActive[idx] = active;
+
+    if (active)
+    {
+        _pid[idx] = PidState{}; // Freeze PID so it does not fight the fixed-output priming
+        int fp = fluid_Pump(idx);
+        int bp = bubble_Pump(idx);
+        // Queue freq first so voltage piggybacks on the same STOP/RESUME cycle
+        queue_Pump_Freq_Byte(fp, PRIMING_FREQ_BYTE);
+        queue_Pump_Voltage(fp, PRIMING_VOLT_BYTE);
+        queue_Pump_Freq_Byte(bp, PRIMING_FREQ_BYTE);
+        queue_Pump_Voltage(bp, PRIMING_VOLT_BYTE);
+    }
+    // Deactivation: flag cleared; update_Pumps() resumes normal circuit logic on next tick.
+    // main.cpp follows up with SET_PUMP which calls set_Circuit_Config(), resetting PID
+    // and restoring the user-configured frequency and flow rate.
+}
+
 void Microfluidics::stop_All()
 {
+    for (int i = 0; i < NUM_CIRCUITS; i++)
+        _primingActive[i] = false; // Interlock opened — clear priming so PID resumes cleanly
     for (int i = 0; i < NUM_PUMPS; i++)
         queue_Pump_Voltage(i, 0);
     for (int i = 0; i < NUM_CIRCUITS; i++)
@@ -363,6 +389,9 @@ void Microfluidics::update_Pumps()
 
     for (int i = 0; i < NUM_CIRCUITS; i++)
     {
+        if (_primingActive[i])
+            continue; // Priming holds fixed freq/voltage; circuit logic and PID are suspended
+
         if (_config[i].flowRate_uLmin <= 0.0f)
         {
             stop_Circuit_Pumps(i);
