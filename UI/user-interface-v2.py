@@ -19,6 +19,7 @@ Commands sent:
     SET_TEMP:<float>                          – temperature setpoint
     SET_LED:<group>:<0|1>:<0-100>             – UV LED group
     SET_PUMP:<cir>:<flow>:<pulsed>:<feed>:<pause>:<cycles>
+    SET_PRIMING:<cir>:<0|1>              – priming mode (1 = 400 Hz + max V; 0 = restore)
 
 Dependencies:
     pip install customtkinter matplotlib websocket-client
@@ -687,9 +688,11 @@ class App(ctk.CTk):
         pumps_row.grid_columnconfigure(0, weight=1)
         pumps_row.grid_columnconfigure(1, weight=1)
 
-        self._pump_mode_vars = []
-        self._pump_frames    = []
-        self._pump_vars      = []   # [{flow, volume, feed, pause}, ...]
+        self._pump_mode_vars  = []
+        self._pump_frames     = []
+        self._pump_vars       = []   # [{flow, volume, feed, pause}, ...]
+        self._priming_active  = [False, False]
+        self._priming_btns: list[ctk.CTkButton] = []
 
         for i in range(2):
             pump_card = ctk.CTkFrame(pumps_row, corner_radius=12)
@@ -773,6 +776,30 @@ class App(ctk.CTk):
 
             self._pump_frames.append((cont_frame, pulsed_frame))
             cont_frame.pack(fill="x")  # continuous shown by default
+
+            # ── Priming button ────────────────────────────────────────────────
+            ctk.CTkFrame(pump_card, height=1,
+                         fg_color=("gray72", "gray28")).pack(fill="x", padx=14, pady=(10, 0))
+
+            priming_btn = ctk.CTkButton(
+                pump_card,
+                text="Priming  OFF",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                fg_color=("gray78", "gray23"),
+                hover_color=("gray68", "gray32"),
+                text_color=("black", "white"),
+                width=180, height=36, corner_radius=8,
+                command=lambda idx=i: self._toggle_priming(idx),
+            )
+            priming_btn.pack(pady=(8, 2))
+            self._priming_btns.append(priming_btn)
+
+            ctk.CTkLabel(
+                pump_card,
+                text="Under development, do not use",
+                font=ctk.CTkFont(size=10),
+                text_color=("gray55", "gray55"),
+            ).pack(pady=(0, 12))
 
         return fr
 
@@ -1146,6 +1173,53 @@ class App(ctk.CTk):
             cont_frame.pack_forget()
             pulsed_frame.pack(fill="x")
         self._on_ctrl_change()
+
+    # ── priming toggle ────────────────────────────────────────────────────────
+    def _toggle_priming(self, pump_idx: int) -> None:
+        self._priming_active[pump_idx] = not self._priming_active[pump_idx]
+        active = self._priming_active[pump_idx]
+        btn = self._priming_btns[pump_idx]
+        if active:
+            btn.configure(
+                text="Priming  ON",
+                fg_color="#d68910",
+                hover_color="#b7770d",
+                text_color="white",
+            )
+            # 400 Hz + maximum allowable voltage — firmware enforces voltage ceiling
+            self._ws.send(f"SET_PRIMING:{pump_idx + 1}:1")
+        else:
+            btn.configure(
+                text="Priming  OFF",
+                fg_color=("gray78", "gray23"),
+                hover_color=("gray68", "gray32"),
+                text_color=("black", "white"),
+            )
+            # Restore previous pump configuration
+            self._ws.send(f"SET_PRIMING:{pump_idx + 1}:0")
+            self._resend_single_pump(pump_idx)
+
+    def _resend_single_pump(self, pump_idx: int) -> None:
+        """Re-send the configured pump parameters for one circuit after priming ends."""
+        pvars     = self._pump_vars[pump_idx]
+        is_pulsed = 1 if self._pump_mode_vars[pump_idx].get() == "Pulsed" else 0
+        if is_pulsed:
+            volume_ul = float(pvars["volume"].get() or "0")
+            feed_s    = float(pvars["feed"].get()   or "0")
+            pause_s   = float(pvars["pause"].get()  or "0")
+            flow_rate = (volume_ul / feed_s * 60.0) if feed_s > 0.0 else 0.0
+            flow   = f"{flow_rate:.2f}"
+            feed   = f"{feed_s:.2f}"
+            pause  = f"{pause_s:.2f}"
+            cycles = 0 if pvars["cycles_inf"].get() else int(pvars["cycles_n"].get() or "1")
+        else:
+            flow   = pvars["flow"].get() or "0"
+            feed   = "0"
+            pause  = "0"
+            cycles = 0
+        self._ws.send(
+            f"SET_PUMP:{pump_idx + 1}:{flow}:{is_pulsed}:{feed}:{pause}:{cycles}"
+        )
 
     # ── theme toggle ──────────────────────────────────────────────────────────
     def _toggle_theme(self) -> None:

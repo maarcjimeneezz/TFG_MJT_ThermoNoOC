@@ -112,6 +112,18 @@ void on_WebSocket_Event(uint8_t clientNum, WStype_t type, uint8_t *payload, size
         cfg.cycles = msg.substring(f[5] + 1).toInt();
         fluidics.set_Circuit_Config(circuit, cfg);
     }
+
+    // --- Priming mode ---
+    // Expected format: "SET_PRIMING:1:1"  (circuit 1 or 2, active 0/1)
+    // Gated on is_Micro_Closed: no hardware action while the circuit is open.
+    else if (msg.startsWith("SET_PRIMING:") && is_Micro_Closed)
+    {
+        int f1 = msg.indexOf(':');
+        int f2 = msg.indexOf(':', f1 + 1);
+        int circuit = msg.substring(f1 + 1, f2).toInt();
+        bool active = msg.substring(f2 + 1).toInt() != 0;
+        fluidics.set_Priming(circuit, active);
+    }
 }
 
 // ---------------------------------------------------------------------------
