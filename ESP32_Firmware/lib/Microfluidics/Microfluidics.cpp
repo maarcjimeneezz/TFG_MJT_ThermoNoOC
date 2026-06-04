@@ -98,27 +98,27 @@ void Microfluidics::init_Single_Pump(int pumpIdx)
     // Control registers: GAIN=3 (100 Vpp full-scale), wake device, sequence plays waveform #1
     set_Pump_Register_Page(0x00);
     Wire.beginTransmission(PUMP_I2C_ADDR);
-    Wire.write(0x01);  // Start at reg 0x01
-    Wire.write(0x03);  // reg 0x01: GAIN=3 → 0-100 Vpp, digital input
-    Wire.write(0x00);  // reg 0x02: STANDBY=0, GO=0 (awake, not yet playing)
-    Wire.write(0x01);  // reg 0x03: play waveform ID #1
-    Wire.write(0x00);  // reg 0x04: end of sequence
+    Wire.write(0x01); // Start at reg 0x01
+    Wire.write(0x03); // reg 0x01: GAIN=3 → 0-100 Vpp, digital input
+    Wire.write(0x00); // reg 0x02: STANDBY=0, GO=0 (awake, not yet playing)
+    Wire.write(0x01); // reg 0x03: play waveform ID #1
+    Wire.write(0x00); // reg 0x04: end of sequence
     Wire.endTransmission();
 
     // RAM page 1: header + initial waveform synthesis packet
     set_Pump_Register_Page(0x01);
     Wire.beginTransmission(PUMP_I2C_ADDR);
-    Wire.write(0x00);          // Start at RAM address 0x00
-    Wire.write(0x05);          // Header size (5 = last header byte index for 1 waveform)
-    Wire.write(0x80);          // Start addr upper byte: 0x80 = waveform synthesis mode
-    Wire.write(0x06);          // Start addr lower byte
-    Wire.write(0x00);          // Stop addr upper byte
-    Wire.write(0x09);          // Stop addr lower byte
-    Wire.write(0x00);          // Repeat count: 0 = infinite loop
-    Wire.write(0x00);          // 0x06: amplitude = 0 (stopped at init)
+    Wire.write(0x00);            // Start at RAM address 0x00
+    Wire.write(0x05);            // Header size (5 = last header byte index for 1 waveform)
+    Wire.write(0x80);            // Start addr upper byte: 0x80 = waveform synthesis mode
+    Wire.write(0x06);            // Start addr lower byte
+    Wire.write(0x00);            // Stop addr upper byte
+    Wire.write(0x09);            // Stop addr lower byte
+    Wire.write(0x00);            // Repeat count: 0 = infinite loop
+    Wire.write(0x00);            // 0x06: amplitude = 0 (stopped at init)
     Wire.write(FLUID_FREQ_BYTE); // 0x07: frequency ~203 Hz
-    Wire.write(100);           // 0x08: 100 cycles per play (≈ 0.5 s at 203 Hz, repeats infinitely)
-    Wire.write(0x00);          // 0x09: no envelope
+    Wire.write(100);             // 0x08: 100 cycles per play (≈ 0.5 s at 203 Hz, repeats infinitely)
+    Wire.write(0x00);            // 0x09: no envelope
     Wire.endTransmission();
 }
 
@@ -190,8 +190,8 @@ uint8_t Microfluidics::flow_Rate_To_Amp_Byte(float flowRate_uLmin) const
     // Feedforward table: flow rate → amplitude byte at fixed ~203 Hz, GAIN=3 (100 Vpp).
     // Values scaled to ~85% of full range to leave headroom for the PI trim term.
     // If steady-state error is consistently large, re-calibrate with real pump data.
-    static const float FLOW_LUT[] = {0.f, 200.f, 500.f,  900.f, 1400.f, 2000.f};
-    static const float AMP_LUT[]  = {0.f,  68.f, 110.f,  153.f,  187.f,  217.f};
+    static const float FLOW_LUT[] = {0.f, 200.f, 500.f, 900.f, 1400.f, 2000.f};
+    static const float AMP_LUT[] = {0.f, 68.f, 110.f, 153.f, 187.f, 217.f};
     static const int N = 6;
 
     float amp;
@@ -417,7 +417,7 @@ float Microfluidics::read_Flow_Rate(int sensorNum)
         int16_t flowRaw = (int16_t)((Wire.read() << 8) | Wire.read());
         Wire.read(); // discard flow CRC
         int16_t tempRaw = (int16_t)((Wire.read() << 8) | Wire.read());
-        Wire.read(); // discard temperature CRC
+        Wire.read();                                     // discard temperature CRC
         _lastTempReading[idx] = (float)tempRaw / 200.0f; // SLF3S-0600F: 200 LSB/°C
         return (float)flowRaw / 10.0f;                   // SLF3S-0600F: 10 LSB/(µL/min)
     }

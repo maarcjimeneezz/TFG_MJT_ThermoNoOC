@@ -89,8 +89,8 @@ private:
         float integral = 0.0f;
         float prevError = 0.0f;
         unsigned long lastMs = 0;
-        float outputAmpByte = 0.0f;  // Raw PID output [0-255]
-        float slewedAmpByte = 0.0f;  // Rate-limited version applied to hardware
+        float outputAmpByte = 0.0f; // Raw PID output [0-255]
+        float slewedAmpByte = 0.0f; // Rate-limited version applied to hardware
     };
     PidState _pid[NUM_CIRCUITS];
     float _lastFlowReading[NUM_CIRCUITS]; // Cached sensor value written by PID tick
