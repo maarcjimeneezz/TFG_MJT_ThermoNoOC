@@ -1,46 +1,191 @@
+# lib — Domain Library Modules
 
-This directory is intended for project specific (private) libraries.
-PlatformIO will compile them to static libraries and link into the executable file.
+Each subdirectory is a self-contained PlatformIO library compiled to a static archive and linked into `src/main.cpp`. Every class has a single responsibility; no module has knowledge of another's internals.
 
-The source code of each library should be placed in a separate directory
-("lib/your_library_name/[Code]").
+---
 
-For example, see the structure of the following example libraries `Foo` and `Bar`:
+## Module Overview
 
-|--lib
-|  |
-|  |--Bar
-|  |  |--docs
-|  |  |--examples
-|  |  |--src
-|  |     |- Bar.c
-|  |     |- Bar.h
-|  |  |- library.json (optional. for custom build options, etc) https://docs.platformio.org/page/librarymanager/config.html
-|  |
-|  |--Foo
-|  |  |- Foo.c
-|  |  |- Foo.h
-|  |
-|  |- README --> THIS FILE
-|
-|- platformio.ini
-|--src
-   |- main.c
+| Module | Class | Responsibility |
+|--------|-------|---------------|
+| `Control/` | `Control` | PCB thermal management: NTC thermistor reading and cooling fan PWM |
+| `Incubator/` | `Incubator` | Environmental sensors (temp, humidity, UV, CO₂) and ITO glass heater PID |
+| `LED_Array/` | `LED_Array` | 4-group UV LED matrix via independent LEDC PWM channels |
+| `Microfluidics/` | `Microfluidics` | 4 peristaltic pumps, 2 flow sensors, continuous/pulsed circuit logic and PID |
+| `WiFi/` | `WiFiManager` | WiFi Access Point and WebSocket server |
 
-Example contents of `src/main.c` using Foo and Bar:
-```
-#include <Foo.h>
-#include <Bar.h>
+---
 
-int main (void)
-{
-  ...
-}
+## Control
 
-```
+**File**: `Control/Control.h` · `Control/Control.cpp`
 
-The PlatformIO Library Dependency Finder will find automatically dependent
-libraries by scanning project source files.
+Reads the PCB NTC thermistor (B57164K103J, 10 kΩ @ 25 °C, β = 4300 K) on GPIO 36 with a 15-sample average, and drives the PCB cooling fan on GPIO 12 (LEDC channel 4, 25 kHz, 8-bit).
 
-More information about PlatformIO Library Dependency Finder
-- https://docs.platformio.org/page/librarymanager/ldf.html
+Fan speed follows a continuous linear curve — never fully off:
+
+| PCB temperature | Fan duty cycle |
+|----------------|----------------|
+| ≤ 30 °C | 50 % (PWM 128) — floor |
+| 30 – 50 °C | Linear interpolation 50 % → 100 % |
+| ≥ 50 °C | 100 % (PWM 255) — ceiling |
+
+**Public API**
+
+| Method | Description |
+|--------|-------------|
+| `begin()` | Configures LEDC channel and ADC attenuation. Call once in `setup()`. |
+| `read_PCB_Temperature()` | Returns PCB temperature (°C), 15-point averaged. Non-blocking. |
+| `set_Fan_Speed(speed)` | Directly sets fan duty cycle (0–255). |
+| `update_Fan_Speed(pcbTempC)` | Maps temperature to duty cycle via linear curve. Call every `loop()`. |
+
+---
+
+## Incubator
+
+**File**: `Incubator/Incubator.h` · `Incubator/Incubator.cpp`
+
+Manages the biological incubation environment: dual SHT35 temperature/humidity sensors, LTR390 UV sensor, T6615 CO₂ sensor (UART2), and the two ITO glass heaters.
+
+### Sensors
+
+| Sensor | Protocol | GPIO / MUX channel | Measured quantity |
+|--------|----------|--------------------|------------------|
+| SHT35 #1 | I2C via MUX 0x70 | CH 2 | Top temp (°C) + humidity (%RH) |
+| SHT35 #2 | I2C via MUX 0x70 | CH 3 | Bottom temp (°C) + humidity (%RH) |
+| LTR390 | I2C via MUX 0x70 | CH 4 | UV index + irradiance (W/m²) |
+| T6615 | UART2 | GPIO 16 (RX) / 17 (TX) | CO₂ concentration (%) |
+
+CO₂ reading is non-blocking: a two-state machine (`IDLE` → `CMD_SENT`) sends the request on one tick and parses the response on a later tick with a 500 ms timeout.
+
+### ITO Glass Heaters
+
+Two ITO glass panes are wired in parallel to the same PWM output (GPIO 32, LEDC channel 5, 5 kHz, 8-bit) and receive an identical signal — there is no independent per-glass control.
+
+| Glass | Shape | Sheet resistance |
+|-------|-------|-----------------|
+| Top | Rectangular | 7–10 Ω/sq |
+| Bottom | Square | 15–20 Ω/sq |
+
+An always-on DC fan (powered by the bench power supply, not the ESP32) circulates air inside the incubator chamber to promote homogeneous temperature distribution across both glass surfaces.
+
+**PID parameters**
+
+| Parameter | Value |
+|-----------|-------|
+| Kp | 8.0 |
+| Ki | 0.1 |
+| Kd | 2.0 |
+| Integral anti-windup clamp | ±40 |
+| Derivative low-pass α | 0.1 |
+| Max PWM output | 140 / 255 (55 %, thermal protection) |
+| Bang-bang threshold | 2 °C above setpoint → full power |
+| Setpoint ramp rate | 2 °C/s max |
+
+**Public API**
+
+| Method | Description |
+|--------|-------------|
+| `begin()` | Initialises I2C, Serial2 (CO₂), and ITO PWM. Call once in `setup()`. |
+| `read_All_Sensors()` | Non-blocking poll: reads SHT35 and LTR390, advances CO₂ state machine. Call every `loop()`. |
+| `set_ITO_Power(power)` | Directly sets ITO duty cycle (0–255). |
+| `update_Heater_PWM()` | PID step with setpoint ramp. Call every `loop()`. |
+
+**Public data members** (read by telemetry in `main.cpp`)
+
+`temp1`, `hum1`, `temp2`, `hum2`, `uvIndex`, `uvIrradiance`, `co2Percent`, `targetTemperature`
+
+---
+
+## LED_Array
+
+**File**: `LED_Array/LED_Array.h` · `LED_Array/LED_Array.cpp`
+
+Drives 4 independent UV LED groups via LEDC channels 0–3 (GPIO 18, 19, 25, 26), 2 kHz, 8-bit. State is staged in memory and applied to hardware on `update_All_Groups()`.
+
+**Public API**
+
+| Method | Description |
+|--------|-------------|
+| `begin()` | Configures all 4 LEDC channels, sets LEDs to OFF. Call once in `setup()`. |
+| `set_Group_Enabled(group, enabled)` | Enables/disables group 1–4. |
+| `set_Group_Intensity(group, intensity)` | Sets brightness 0–100 % for group 1–4. |
+| `update_All_Groups()` | Applies staged state to all PWM channels. Call every `loop()`. |
+| `all_Off()` | Immediately drives all channels to 0 and clears state. |
+
+---
+
+## Microfluidics
+
+**File**: `Microfluidics/Microfluidics.h` · `Microfluidics/Microfluidics.cpp`
+
+Controls 4 Bartels mp-Lowdriver peristaltic pumps and 2 Sensirion SLF3S-0600F flow sensors via I2C multiplexer MUX 0x71.
+
+### Circuit layout
+
+| Circuit | Fluid pump (MUX CH) | Bubble-removal pump (MUX CH) | Flow sensor (MUX CH) |
+|---------|---------------------|-----------------------------|----------------------|
+| 1 | Pump 1 (CH 2) | Pump 3 (CH 4) | Sensor 1 (CH 6) |
+| 2 | Pump 2 (CH 3) | Pump 4 (CH 5) | Sensor 2 (CH 7) |
+
+Fluid pumps are PID-controlled (feedforward + PI). Bubble-removal pumps run at a fixed operating point (≈ 156 Hz, ≈ 100 Vpp) whenever their circuit's fluid pump is active.
+
+### Non-blocking pump update state machine
+
+The mp-Lowdriver requires `STOP → 5 ms settle → write registers → RESUME` whenever voltage or frequency changes. A per-pump `PumpUpdate` struct driven by `process_Pending_Updates()` handles this without blocking the control loop.
+
+### Pump PID
+
+| Parameter | Value |
+|-----------|-------|
+| Control variable | Amplitude byte (0–255 → 0–100 Vpp at GAIN=3) |
+| Fixed fluid frequency | 26 × 7.8125 Hz ≈ 203 Hz |
+| Kp | 0.04 ampByte/(µL/min) |
+| Ki | 0.025 ampByte/(µL/min·s) |
+| Sample interval | 100 ms |
+| Slew limit | 15 ampBytes / tick (150 bytes/s) |
+| Anti-windup | Integral frozen when output saturates |
+
+### Priming mode
+
+Activating priming for a circuit sets both its pumps to ≈ 398 Hz + 150 Vpp and suspends PID. Deactivating clears the flag; caller must follow with `set_Circuit_Config()` to restore normal control.
+
+**Public API**
+
+| Method | Description |
+|--------|-------------|
+| `begin()` | Initialises all 4 pumps and 2 flow sensors. Call once in `setup()`. |
+| `set_Circuit_Config(circuit, config)` | Configures flow rate, mode, and timing for circuit 1 or 2. Resets PID. |
+| `update_Pumps()` | Non-blocking: advances pending updates and applies circuit logic. Call every `loop()`. |
+| `set_Priming(circuit, active)` | Activates/deactivates priming mode for a circuit. |
+| `stop_All()` | Queues voltage = 0 for all pumps and clears priming. |
+| `read_Flow_Rate(sensorNum)` | Reads flow rate (µL/min) from sensor 1 or 2 via I2C. |
+| `get_Last_Flow_Reading(circuitNum)` | Returns cached flow reading from last PID tick. |
+| `get_Last_Temp_Reading(circuitNum)` | Returns cached liquid temperature (°C) from last sensor read. |
+| `process_Pending_Updates()` | Drives state machine only — no PID/circuit logic. Use in hardware tests. |
+| `set_Pump_Voltage(pumpNum, voltage)` | Direct low-level voltage control (bypasses PID). |
+| `set_Pump_Frequency(pumpNum, freq_Hz)` | Direct low-level frequency control (bypasses PID). |
+
+---
+
+## WiFi
+
+**File**: `WiFi/WiFiManager.h` · `WiFi/WiFiManager.cpp`
+
+Manages the ESP32 Access Point and WebSocket server (port 5000). Provides telemetry broadcast and exposes the raw server handle so `main.cpp` can register an `onEvent` callback for incoming commands.
+
+| Parameter | Value |
+|-----------|-------|
+| SSID | `ThermoNoOC` |
+| Password | `thermonooc` |
+| IP | `192.168.4.1` |
+| Port | `5000` |
+
+**Public API**
+
+| Method | Description |
+|--------|-------------|
+| `begin(ip, gateway, subnet)` | Configures AP and starts WebSocket server. Call once in `setup()`. |
+| `loop()` | Processes heartbeats and incoming frames. Call every `loop()`. |
+| `broadcast(payload)` | Sends UTF-8 string to all connected clients. |
+| `server()` | Returns reference to `WebSocketsServer` for `onEvent` registration. |

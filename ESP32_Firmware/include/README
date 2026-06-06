@@ -1,37 +1,62 @@
+# include — Project Header Files
 
-This directory is intended for project header files.
+This directory holds global header files shared across `src/` and all `lib/` modules.
 
-A header file is a file containing C declarations and macro definitions
-to be shared between several project source files. You request the use of a
-header file in your project source file (C, C++, etc) located in `src` folder
-by including it, with the C preprocessing directive `#include'.
+---
 
-```src/main.c
+## Pinout.h
 
-#include "header.h"
+**File**: `include/Pinout.h`
 
-int main (void)
-{
- ...
-}
-```
+Single source of truth for all GPIO pin numbers and I2C addresses. Every library module and `main.cpp` includes this file; hardware assignments are never hardcoded elsewhere.
 
-Including a header file produces the same results as copying the header file
-into each source file that needs it. Such copying would be time-consuming
-and error-prone. With a header file, the related declarations appear
-in only one place. If they need to be changed, they can be changed in one
-place, and programs that include the header file will automatically use the
-new version when next recompiled. The header file eliminates the labor of
-finding and changing all the copies as well as the risk that a failure to
-find one copy will result in inconsistencies within a program.
+### I2C Bus
 
-In C, the convention is to give header files names that end with `.h'.
+| Define | Value | Description |
+|--------|-------|-------------|
+| `I2C_SDA` | 21 | Shared SDA line for both multiplexers |
+| `I2C_SCL` | 22 | Shared SCL line for both multiplexers |
+| `MUX_ADDR_SENSORS` | 0x70 | TCA9548A #1 — environmental sensors (A0,A1,A2 → GND) |
+| `MUX_ADDR_MICROFLUIDICS` | 0x71 | TCA9548A #2 — pumps and flow sensors (A0 → 5V, A1,A2 → GND) |
 
-Read more about using header files in official GCC documentation:
+### Control Board (direct ESP32 pins)
 
-* Include Syntax
-* Include Operation
-* Once-Only Headers
-* Computed Includes
+| Define | GPIO | Description |
+|--------|------|-------------|
+| `PIN_TEMP_PCB` | 36 (VP) | Analog input for PCB NTC thermistor (B57164K103J) |
+| `PIN_ITO_CONTROL` | 32 | PWM output shared by both ITO glass heaters |
+| `PIN_PWM_FANS` | 12 | PWM output for PCB cooling fan |
 
-https://gcc.gnu.org/onlinedocs/cpp/Header-Files.html
+> **ITO glass heaters**: two panes (top rectangular 7–10 Ω/sq, bottom square 15–20 Ω/sq) are wired in parallel to `PIN_ITO_CONTROL` and driven by a single signal — no independent per-glass control.
+>
+> **Incubator circulation fan**: a separate DC fan powered directly from the bench power supply (not the ESP32) runs inside the incubator chamber at all times. It is not connected to any ESP32 pin.
+
+### UV LED Array
+
+| Define | GPIO | LEDC channel | Group |
+|--------|------|-------------|-------|
+| `PIN_C1_LEDS` | 18 | 0 | LED group 1 |
+| `PIN_C2_LEDS` | 19 | 1 | LED group 2 |
+| `PIN_C3_LEDS` | 25 | 2 | LED group 3 |
+| `PIN_C4_LEDS` | 26 | 3 | LED group 4 |
+
+### Sensors Board (via MUX 0x70)
+
+| Define | MUX channel | Device |
+|--------|-------------|--------|
+| `MUX_CH_TEMP1` | 2 | SHT35 #1 — top sensor |
+| `MUX_CH_TEMP2` | 3 | SHT35 #2 — bottom sensor |
+| `MUX_CH_UV` | 4 | LTR390 UV sensor |
+
+CO₂ sensor (T6615) uses dedicated UART2: `PIN_CO2_RX` = GPIO 16, `PIN_CO2_TX` = GPIO 17, 9600 baud.
+
+### Microfluidics Board (via MUX 0x71)
+
+| Define | MUX channel | Device |
+|--------|-------------|--------|
+| `MUX_CH_PUMP_1` | 2 | mp-Lowdriver — Pump 1 (fluid, circuit 1) |
+| `MUX_CH_PUMP_2` | 3 | mp-Lowdriver — Pump 2 (fluid, circuit 2) |
+| `MUX_CH_PUMP_3` | 4 | mp-Lowdriver — Pump 3 (bubble removal, circuit 1) |
+| `MUX_CH_PUMP_4` | 5 | mp-Lowdriver — Pump 4 (bubble removal, circuit 2) |
+| `MUX_CH_FLOW_1` | 6 | SLF3S-0600F — Flow sensor 1 (circuit 1) |
+| `MUX_CH_FLOW_2` | 7 | SLF3S-0600F — Flow sensor 2 (circuit 2) |
