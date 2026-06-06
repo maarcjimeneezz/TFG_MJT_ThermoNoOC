@@ -897,7 +897,7 @@ class App(ctk.CTk):
                 self._sim_running = True
                 self._sim_t = 0
                 self._set_connected(True)
-                self._sim_tick()
+                self._sim_prefill()
             return
         if self._ws.connected:
             self._ws.disconnect()
@@ -908,18 +908,13 @@ class App(ctk.CTk):
             self._conn_btn.configure(text="Cancel", state="normal")
             self._ws.connect(WS_URL)
 
-    def _sim_tick(self) -> None:
-        if not self._sim_running or self._closing or not self.winfo_exists():
-            return
-        t = self._sim_t
-        self._sim_t += 1
-        ramp = min(1.0, t / 90.0)   # sensors ramp up over ~90 s from room temp to target
+    def _sim_sample(self, t: int) -> dict:
+        ramp = min(1.0, t / 90.0)
         s = math.sin
         g = random.gauss
-        # Flow 2: pulsed — 500 µL over 30 s feeding (=1000 µL/min), then 30 s rest
         phase = t % 60
         flow2 = round(max(0, 1000.0 + 18.0 * s(t * 0.20) + g(0, 8.0)), 1) if phase < 30 else 0.0
-        data = {
+        return {
             "temp1":      round(25.0 + 12.0 * ramp + 0.30 * s(t * 0.10)       + g(0, 0.08), 2),
             "temp2":      round(24.5 + 12.0 * ramp + 0.20 * s(t * 0.07 + 1.2) + g(0, 0.08), 2),
             "hum1":       round(min(99, max(0, 55.0 + 10.0 * ramp + 1.5 * s(t * 0.05)       + g(0, 0.30))), 2),
@@ -932,8 +927,26 @@ class App(ctk.CTk):
             "fluidTemp1": round(25.0 + 0.15 * s(t * 0.08)       + g(0, 0.04), 2),
             "fluidTemp2": round(25.2 + 0.12 * s(t * 0.07 + 1.0) + g(0, 0.04), 2),
         }
-        self._ingest(data)
-        self.after(1000, self._sim_tick)
+
+    def _sim_prefill(self) -> None:
+        """Populate the full 120-second history instantly and redraw once."""
+        with self._lock:
+            self._elapsed = float(BUFFER_LEN)
+            for i in range(BUFFER_LEN):
+                data = self._sim_sample(i)
+                self._t.append(float(i))
+                self._bufs["temp1"].append(data["temp1"])
+                self._bufs["temp2"].append(data["temp2"])
+                self._bufs["hum1"].append(data["hum1"])
+                self._bufs["hum2"].append(data["hum2"])
+                self._bufs["co2"].append(data["co2"])
+                self._bufs["uv_irr"].append(data["uvW"])
+                self._bufs["uv_idx"].append(data["uvIndex"])
+                self._bufs["flow1"].append(data["flow1"])
+                self._bufs["flow2"].append(data["flow2"])
+                self._bufs["fluidTemp1"].append(data["fluidTemp1"])
+                self._bufs["fluidTemp2"].append(data["fluidTemp2"])
+        self.after(0, self._redraw)
 
     def _set_connected(self, ok: bool) -> None:
         if self._closing or not self.winfo_exists():
@@ -958,6 +971,9 @@ class App(ctk.CTk):
     # ── clock ─────────────────────────────────────────────────────────────────
     def _update_clock(self) -> None:
         if self._closing or not self.winfo_exists():
+            return
+        if SIMULATION_MODE:
+            self._clock_lbl.configure(text="17:15:00")
             return
         self._clock_lbl.configure(text=datetime.datetime.now().strftime("%H:%M:%S"))
         self.after(1000, self._update_clock)
