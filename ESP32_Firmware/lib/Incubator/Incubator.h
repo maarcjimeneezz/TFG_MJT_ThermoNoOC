@@ -33,8 +33,11 @@ private:
     static constexpr float ITO_INTEGRAL_LIMIT = 40.0f;  // anti-windup clamp
     static constexpr float ITO_DERIV_ALPHA    = 0.1f;   // low-pass for noisy sensor
 
-    // Hard PWM output cap — limits duty cycle to 50 % (128/255) for 60 Ω glass.
-    static const uint8_t ITO_PWM_MAX = 128;  // 50 %
+    // Hard PWM output cap — limits duty cycle to 55 % (140/255) for 60 Ω glass.
+    static const uint8_t ITO_PWM_MAX = 140;  // 55 %
+
+    // Bang-bang threshold: if error exceeds this, bypass PID and go full power.
+    static constexpr float ITO_BANGBANG_THRESHOLD = 2.0f;  // °C
 
     // Max setpoint change rate (°C/s) — faster ramp for dual-crystal configuration
     static constexpr float ITO_RAMP_RATE_CS = 2.0f;

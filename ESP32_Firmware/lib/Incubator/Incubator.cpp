@@ -189,17 +189,34 @@ void Incubator::update_Heater_PWM()
     float avgTemp = (temp1 + temp2) / 2.0f;
     float error = _rampedTarget - avgTemp;
 
-    // Integral with anti-windup clamp
-    _integral += error * dt;
-    _integral = constrain(_integral, -ITO_INTEGRAL_LIMIT, ITO_INTEGRAL_LIMIT);
+    uint8_t pwm;
+    if (error > ITO_BANGBANG_THRESHOLD)
+    {
+        // More than 2 °C below target: full power, freeze PID state to avoid windup
+        _prevError = error;
+        pwm = ITO_PWM_MAX;
+    }
+    else if (error <= -ITO_BANGBANG_THRESHOLD)
+    {
+        // More than 2 °C above target: cut power, freeze PID state
+        _prevError = error;
+        pwm = 0;
+    }
+    else
+    {
+        // Fine-control band (−2 °C < error ≤ 2 °C): PID
+        _integral += error * dt;
+        _integral = constrain(_integral, -ITO_INTEGRAL_LIMIT, ITO_INTEGRAL_LIMIT);
 
-    // Derivative filtered against SHT35 sensor noise
-    float rawDeriv = (error - _prevError) / dt;
-    _filteredDeriv = ITO_DERIV_ALPHA * rawDeriv + (1.0f - ITO_DERIV_ALPHA) * _filteredDeriv;
-    _prevError = error;
+        float rawDeriv = (error - _prevError) / dt;
+        _filteredDeriv = ITO_DERIV_ALPHA * rawDeriv + (1.0f - ITO_DERIV_ALPHA) * _filteredDeriv;
+        _prevError = error;
 
-    float output = ITO_KP * error + ITO_KI * _integral + ITO_KD * _filteredDeriv;
-    uint8_t pwm = (uint8_t)constrain((int)output, 0, ITO_PWM_MAX);
+        float output = ITO_KP * error + ITO_KI * _integral + ITO_KD * _filteredDeriv;
+        // Keep a minimum of 10 when slightly above target to avoid thermal shock on the glass
+        int minPwm = (error < 0.0f) ? 10 : 0;
+        pwm = (uint8_t)constrain((int)output, minPwm, ITO_PWM_MAX);
+    }
 
     set_ITO_Power(pwm);
 }

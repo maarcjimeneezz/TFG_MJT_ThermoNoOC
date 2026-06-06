@@ -54,22 +54,22 @@ ESP32_Firmware/
 
 ```
 loop()
-├── wifi.loop()                       // always — handles WS heartbeats and commands
+├── wifi.loop()                          // always — handles WS heartbeats and commands
+├── control.update_Fan_Speed(...)        // always — PCB fan has no interlock
+├── leds.update_All_Groups()             // always — LEDs have no interlock
 │
-├── if (is_Incubator_Closed)          // incubator safety interlock
+├── if (is_Incubator_Closed)             // incubator safety interlock
 │   ├── incubator.read_All_Sensors()
-│   ├── incubator.update_Heater_PWM()
-│   ├── control.update_Fan_Speed(...)
-│   ├── leds.update_All_Groups()
-│   │
-│   └── if (is_Micro_Closed)          // microfluidics safety interlock
-│       └── fluidics.update_Pumps()
+│   └── incubator.update_Heater_PWM()
+│
+├── if (is_Micro_Closed)                 // microfluidics safety interlock
+│   └── fluidics.update_Pumps()         // reads flow + liquid temp, runs PID
 │
 └── every 1 000 ms
     └── wifi.broadcast(telemetry_JSON)
 ```
 
-Both safety flags are set/cleared by the UI via `SET_INCUBATOR:` and `SET_MICRO:` commands. All actuators are fully inhibited while their respective interlock is open.
+`SET_INCUBATOR:` gates the ITO heater and environmental sensor reads. `SET_MICRO:` gates pump PID and flow sensor reads. The PCB cooling fan and UV LEDs are unaffected by either interlock and run every loop tick.
 
 ---
 
@@ -94,11 +94,15 @@ Both safety flags are set/cleared by the UI via `SET_INCUBATOR:` and `SET_MICRO:
   "temp2": 37.18,  "hum2": 65.1,
   "uvIndex": 0.042, "uvW": 0.0011,
   "co2": 0.0410,
-  "flow1": 523.4,  "flow2": 0.0
+  "flow1": 523.4,  "flow2": 0.0,
+  "fluidTemp1": 36.8, "fluidTemp2": 0.0
 }
 ```
 
-`flow1` / `flow2` are the last values cached by the flow-sensor PID tick (no extra I2C read).
+| Field | Source | Notes |
+|-------|--------|-------|
+| `flow1` / `flow2` | SLF3S-0600F circuit 1 / 2 | Cached from the PID tick — no extra I2C read |
+| `fluidTemp1` / `fluidTemp2` | SLF3S-0600F circuit 1 / 2 | Liquid temperature (°C) read from the same sensor frame as the flow value; scale factor 200 LSB/°C. Reports 0.0 while the microfluidics interlock is open. |
 
 ### Commands (UI → ESP32)
 
@@ -152,7 +156,16 @@ MUX 0x71 — Microfluidics
 | LTR390 (UV) | 1 | I2C | 0x53 | 0x70: CH4 |
 | T6615 (CO₂) | 1 | UART2 | — | GPIO 16/17, 9600 baud |
 
-**ITO heater PID** (PWM channel 5, 5 kHz, 8-bit):
+**ITO glass heaters** — two glasses driven together from the same PWM pin (channel 5, 5 kHz, 8-bit):
+
+| Glass | Shape | Sheet resistance |
+|-------|-------|-----------------|
+| Top | Rectangular | 7–10 Ω/sq |
+| Bottom | Square | 15–20 Ω/sq |
+
+Both glasses are wired in parallel to the same output pin and receive an identical PWM signal; there is no independent per-glass control.
+
+**ITO heater PID** parameters:
 
 | Parameter | Value |
 |-----------|-------|
@@ -164,6 +177,8 @@ MUX 0x71 — Microfluidics
 | Max PWM output | 30 / 255 (thermal protection) |
 | Forced cooling | 5 s on → 3 s forced off |
 | Setpoint ramp | 0.5 °C/s max |
+
+**Incubator circulation fan** — a DC fan powered directly from the bench power supply (not ESP32-controlled) runs continuously inside the incubator chamber. It circulates air to promote homogeneous temperature distribution across both ITO glass surfaces.
 
 ### UV LED Array (`LED_Array` class)
 
