@@ -30,7 +30,9 @@ from __future__ import annotations
 import csv
 import datetime
 import json
+import math
 import pathlib
+import random
 import threading
 from collections import deque
 from typing import Callable, Optional
@@ -46,9 +48,10 @@ import websocket  # websocket-client package
 # ─────────────────────────────────────────────────────────────────────────────
 # Constants
 # ─────────────────────────────────────────────────────────────────────────────
-WS_URL     = "ws://192.168.4.1:5000"
-BUFFER_LEN = 120      # 120 s of history at 1 s/sample
-REDRAW_MS  = 1000     # chart refresh cadence (ms)
+WS_URL          = "ws://192.168.4.1:5000"
+BUFFER_LEN      = 120      # 120 s of history at 1 s/sample
+REDRAW_MS       = 1000     # chart refresh cadence (ms)
+SIMULATION_MODE = True     # Set False to use real ESP32 hardware
 
 # Per-series colours – visible on both dark and light backgrounds
 CLR = {
@@ -179,7 +182,7 @@ class App(ctk.CTk):
     # ── init ──────────────────────────────────────────────────────────────────
     def __init__(self) -> None:
         super().__init__()
-        self.title("ThermoNoOC — Control Panel")
+        self.title("ThermoNoOC — Control Panel" + (" [SIMULATION]" if SIMULATION_MODE else ""))
         self.geometry("1140x760")
         self.minsize(860, 580)
 
@@ -203,6 +206,10 @@ class App(ctk.CTk):
         self._ws.on_data   = self._ingest
         self._ws.on_status = lambda ok: self.after(0, self._set_connected, ok)
         self._was_connecting = False
+
+        # simulation
+        self._sim_running = False
+        self._sim_t       = 0
 
         # pending changes flag – controls Send Data button appearance
         self._pending_changes = False
@@ -841,7 +848,8 @@ class App(ctk.CTk):
             btn_kw = dict(text="Incubator Opened", fg_color="#c0392b", hover_color="#a93226")
         self._incubator_btn.configure(**btn_kw)
         self._update_send_btn()
-        self._ws.send(f"SET_INCUBATOR:{1 if self._incubator_closed else 0}")
+        if not SIMULATION_MODE:
+            self._ws.send(f"SET_INCUBATOR:{1 if self._incubator_closed else 0}")
 
     # ── CSV logging ───────────────────────────────────────────────────────────
     def _open_csv(self) -> None:
@@ -881,6 +889,16 @@ class App(ctk.CTk):
 
     # ── connection ────────────────────────────────────────────────────────────
     def _toggle_connect(self) -> None:
+        if SIMULATION_MODE:
+            if self._sim_running:
+                self._sim_running = False
+                self._set_connected(False)
+            else:
+                self._sim_running = True
+                self._sim_t = 0
+                self._set_connected(True)
+                self._sim_tick()
+            return
         if self._ws.connected:
             self._ws.disconnect()
         else:
@@ -889,6 +907,33 @@ class App(ctk.CTk):
             self._conn_lbl.configure(text="Connecting…")
             self._conn_btn.configure(text="Cancel", state="normal")
             self._ws.connect(WS_URL)
+
+    def _sim_tick(self) -> None:
+        if not self._sim_running or self._closing or not self.winfo_exists():
+            return
+        t = self._sim_t
+        self._sim_t += 1
+        ramp = min(1.0, t / 90.0)   # sensors ramp up over ~90 s from room temp to target
+        s = math.sin
+        g = random.gauss
+        # Flow 2: pulsed — 500 µL over 30 s feeding (=1000 µL/min), then 30 s rest
+        phase = t % 60
+        flow2 = round(max(0, 1000.0 + 18.0 * s(t * 0.20) + g(0, 8.0)), 1) if phase < 30 else 0.0
+        data = {
+            "temp1":      round(25.0 + 12.0 * ramp + 0.30 * s(t * 0.10)       + g(0, 0.08), 2),
+            "temp2":      round(24.5 + 12.0 * ramp + 0.20 * s(t * 0.07 + 1.2) + g(0, 0.08), 2),
+            "hum1":       round(min(99, max(0, 55.0 + 10.0 * ramp + 1.5 * s(t * 0.05)       + g(0, 0.30))), 2),
+            "hum2":       round(min(99, max(0, 54.0 + 10.0 * ramp + 1.0 * s(t * 0.06 + 0.8) + g(0, 0.30))), 2),
+            "co2":        round(max(0, 0.050 + 0.003 * s(t * 0.03) + g(0, 0.001)), 4),
+            "uvW":        round(max(0,  2.50 + 0.40  * s(t * 0.08) + g(0, 0.050)), 4),
+            "uvIndex":    round(max(0, 10.50 + 1.60  * s(t * 0.08) + g(0, 0.100)), 3),
+            "flow1":      round(max(0, 750.0 + 40.0  * s(t * 0.12)       + g(0, 8.0)), 1),
+            "flow2":      flow2,
+            "fluidTemp1": round(25.0 + 0.15 * s(t * 0.08)       + g(0, 0.04), 2),
+            "fluidTemp2": round(25.2 + 0.12 * s(t * 0.07 + 1.0) + g(0, 0.04), 2),
+        }
+        self._ingest(data)
+        self.after(1000, self._sim_tick)
 
     def _set_connected(self, ok: bool) -> None:
         if self._closing or not self.winfo_exists():
@@ -924,7 +969,7 @@ class App(ctk.CTk):
 
     # ── send data directly ────────────────────────────────────────────────────
     def _send_data(self) -> None:
-        if not self._ws.connected:
+        if not SIMULATION_MODE and not self._ws.connected:
             return
         if self._active == 2:
             self._send_pump_data()
@@ -1160,7 +1205,8 @@ class App(ctk.CTk):
                 text="Microfluidics Opened",
                 fg_color="#c0392b", hover_color="#a93226",
             )
-        self._ws.send(f"SET_MICRO:{1 if self._micro_closed else 0}")
+        if not SIMULATION_MODE:
+            self._ws.send(f"SET_MICRO:{1 if self._micro_closed else 0}")
         self._update_send_btn()
 
     # ── pump mode toggle ──────────────────────────────────────────────────────
