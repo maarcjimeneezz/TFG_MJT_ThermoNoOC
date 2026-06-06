@@ -49,7 +49,7 @@ Two independent toggle buttons gate all actuator activity. They are visible and 
 
 | Button | Variable | Effect when **opened** |
 |--------|----------|----------------------|
-| **Incubator Opened/Closed** | `is_Incubator_Closed` (ESP32) | ESP32 stops heater, LEDs, fans, and pumps. Send Data disabled. |
+| **Incubator Opened/Closed** | `is_Incubator_Closed` (ESP32) | ESP32 stops the ITO heater and environmental sensor reads. PCB cooling fan and UV LEDs continue running — they have no interlock. Send Data disabled. Note: the incubator circulation fan (bench PSU) is not ESP32-controlled and remains on regardless. |
 | **Microfluidics Opened/Closed** | `is_Micro_Closed` (ESP32) | ESP32 immediately stops all 4 pumps. Send Data disabled on Microfluidics tab. |
 
 Both buttons follow the same visual convention: **red = opened**, **green = closed**.

@@ -33,7 +33,9 @@
 |-----------|-------------|
 | Microcontroller | ESP32-DEVKIT-V1 |
 | Incubator sensors | 2× SHT35 (temp/humidity), LTR390 (UV), T6615 (CO₂) |
-| Actuators | ITO glass heater, 4× UV LED groups, 4× micropumps |
+| ITO glass heaters | 2× ITO glass (top rectangular 7–10 Ω/sq, bottom square 15–20 Ω/sq); both on the same PWM pin |
+| Incubator fan | DC fan powered by bench PSU; always on; provides air circulation inside the incubator |
+| Other actuators | 4× UV LED groups, 4× micropumps |
 | Flow sensors | 2× Sensirion SLF3S-0600F (0–2000 µL/min) |
 | Thermal management | NTC thermistor + PWM fan |
 
