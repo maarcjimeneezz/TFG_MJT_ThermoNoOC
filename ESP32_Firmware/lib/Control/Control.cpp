@@ -25,6 +25,7 @@ int Control::read_NTC_ADC_Average() const
 
 float Control::convert_ADC_To_Temperature(int adcAvg) const
 {
+    // B-parameter equation: 1/T = 1/T0 + (1/β)·ln(R/R0)
     float vFixed = (adcAvg * ADC_VREF) / (float)ADC_MAX;
     float rNtc   = NTC_RFIXED * ((ADC_VREF - vFixed) / vFixed);
     float tempK  = 1.0f / ((1.0f / NTC_T0) + (1.0f / NTC_BETA) * logf(rNtc / NTC_R0));
