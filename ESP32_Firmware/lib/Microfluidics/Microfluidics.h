@@ -150,7 +150,7 @@ public:
 
     /**
      * Activates or deactivates priming mode for a circuit (1 or 2).
-     * Active  : sets both pumps of the circuit to ~398 Hz + 100 Vpp and suspends PID.
+     * Active  : sets both pumps of the circuit to ~300 Hz + 150 Vpp and suspends PID.
      * Inactive: clears the flag; caller must follow up with set_Circuit_Config() to
      *           restore normal frequency and flow-rate control.
      */
