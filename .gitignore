@@ -21,3 +21,6 @@ bin/
 # System files
 .DS_Store
 Thumbs.db
+
+# Data logging output
+UI/Data_Logging/
