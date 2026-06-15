@@ -12,8 +12,9 @@ Telemetry JSON (1 s cadence):
     hum1,  hum2    – humidity %    (SHT35 x2)
     uvIndex        – UV index      (LTR390)
     uvW            – irradiance W/m²
-    co2            – CO₂ %        (T6615)
+    co2            – CO₂ concentration % (0–100 scale, T6615)
     flow1, flow2   – µL/min       (microfluidics)
+    fluidTemp1, fluidTemp2 – °C (microfluidics)
 
 Commands sent:
     SET_TEMP:<float>                          – temperature setpoint
@@ -276,7 +277,7 @@ class App(ctk.CTk):
         )
         self._conn_btn.grid(row=0, column=8, padx=4)
 
-        # send data — disabled until incubator is closed
+        # send data — disabled until the active subsystem is confirmed closed
         self._send_btn = ctk.CTkButton(
             hdr, text="Send Data", width=100, height=34, corner_radius=6,
             fg_color=_SEND_IDLE, hover_color=_SEND_IDLE_HOVER,
@@ -1199,8 +1200,8 @@ class App(ctk.CTk):
             self._ws.send(f"SET_PRIMING:{pump_idx + 1}:0")
             self._resend_single_pump(pump_idx)
 
+    # Re-sends configured pump parameters for one circuit after priming ends.
     def _resend_single_pump(self, pump_idx: int) -> None:
-        """Re-send the configured pump parameters for one circuit after priming ends."""
         pvars     = self._pump_vars[pump_idx]
         is_pulsed = 1 if self._pump_mode_vars[pump_idx].get() == "Pulsed" else 0
         if is_pulsed:

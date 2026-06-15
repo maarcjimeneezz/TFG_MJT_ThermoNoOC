@@ -72,9 +72,9 @@ private:
     static const uint8_t BUBBLE_FREQ_BYTE = 20; // ≈ 156 Hz
     static const uint8_t BUBBLE_VOLTAGE = 168;  // ≈ 100 Vpp
 
-    // Priming mode: 400 Hz + 150 Vpp (hardware ceiling at GAIN=3)
-    // 400 / 7.8125 = 51.2 → truncated to 51 → 51 × 7.8125 ≈ 398 Hz
-    static const uint8_t PRIMING_FREQ_BYTE = 13;
+    // Priming mode: ~305 Hz + 150 Vpp (hardware ceiling at GAIN=3)
+    // 300 / 7.8125 = 38.4 → rounded to 39 → 39 × 7.8125 ≈ 305 Hz
+    static const uint8_t PRIMING_FREQ_BYTE = 39;
     static const uint8_t PRIMING_VOLT_BYTE = 255; // 150 Vpp at GAIN=3 — hardware ceiling
 
     // ---- Per-circuit state ----
@@ -150,7 +150,7 @@ public:
 
     /**
      * Activates or deactivates priming mode for a circuit (1 or 2).
-     * Active  : sets both pumps of the circuit to ~398 Hz + 100 Vpp and suspends PID.
+     * Active  : sets both pumps of the circuit to ~300 Hz + 150 Vpp and suspends PID.
      * Inactive: clears the flag; caller must follow up with set_Circuit_Config() to
      *           restore normal frequency and flow-rate control.
      */
